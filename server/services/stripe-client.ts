@@ -99,6 +99,79 @@ export async function capturePaymentIntent(paymentIntentId: string) {
   }
 }
 
+export async function capturePartialPayment(paymentIntentId: string, amount: number) {
+  try {
+    // First retrieve the payment intent to check its status
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    
+    // Only proceed if the payment intent is in a capturable state
+    if (paymentIntent.status !== 'requires_capture') {
+      throw new Error(`Payment intent is not in a capturable state. Current status: ${paymentIntent.status}`);
+    }
+    
+    // Convert amount to cents and ensure it's an integer
+    const amountInCents = Math.round(amount * 100);
+    
+    // Ensure the amount to capture doesn't exceed the authorized amount
+    if (amountInCents > paymentIntent.amount) {
+      throw new Error(`Cannot capture ${amountInCents} cents, which exceeds the authorized amount of ${paymentIntent.amount} cents`);
+    }
+    
+    // Capture the specified amount
+    const capturedPayment = await stripe.paymentIntents.capture(paymentIntentId, {
+      amount_to_capture: amountInCents
+    });
+    
+    return {
+      status: capturedPayment.status,
+      amount: capturedPayment.amount_received / 100, // Convert from cents to dollars
+      amountCaptured: amountInCents / 100, // Convert from cents to dollars
+      paymentIntentId: capturedPayment.id,
+    };
+  } catch (error: any) {
+    console.error('Error capturing partial payment:', error);
+    throw new Error(`Failed to capture partial payment: ${error.message}`);
+  }
+}
+
+export async function updateAuthorizedAmount(paymentIntentId: string, amount: number) {
+  try {
+    // First retrieve the payment intent to check its status
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    
+    // Only proceed if the payment intent is in an updatable state
+    const updatableStatuses = ['requires_payment_method', 'requires_confirmation', 'requires_action', 'processing', 'requires_capture'];
+    if (!updatableStatuses.includes(paymentIntent.status)) {
+      throw new Error(`Payment intent cannot be updated. Current status: ${paymentIntent.status}`);
+    }
+    
+    // Convert amount to cents and ensure it's an integer
+    const amountInCents = Math.round(amount * 100);
+    
+    // Ensure the new amount is greater than the current amount
+    if (amountInCents <= paymentIntent.amount) {
+      throw new Error(`New amount (${amountInCents} cents) must be greater than current amount (${paymentIntent.amount} cents)`);
+    }
+    
+    // Update the payment intent with the new amount
+    const updatedPaymentIntent = await stripe.paymentIntents.update(
+      paymentIntentId,
+      {
+        amount: amountInCents
+      }
+    );
+    
+    return {
+      status: updatedPaymentIntent.status,
+      amount: updatedPaymentIntent.amount / 100, // Convert from cents to dollars
+      paymentIntentId: updatedPaymentIntent.id,
+    };
+  } catch (error: any) {
+    console.error('Error updating authorized amount:', error);
+    throw new Error(`Failed to update authorized amount: ${error.message}`);
+  }
+}
+
 export async function createCustomer({
   email,
   name,
@@ -166,7 +239,9 @@ export async function createOnDemandReadingPayment(
       clientSecret: paymentIntent.client_secret,
       paymentIntentId: paymentIntent.id,
       paymentLinkUrl: `/reading-session/${readingId}?paymentIntentId=${paymentIntent.id}`,
-      amount: initialAmount
+      amount: initialAmount,
+      paymentIntent: paymentIntent, // Return the full PaymentIntent object for incremental updates
+      pricePerMinute: pricePerMinute // Include the price per minute for easy reference
     };
   } catch (error: any) {
     console.error('Error creating on-demand reading payment:', error);
@@ -309,6 +384,8 @@ export default {
   createPaymentIntent,
   updatePaymentIntent,
   capturePaymentIntent,
+  capturePartialPayment,
+  updateAuthorizedAmount,
   createCustomer,
   retrievePaymentIntent,
   createOnDemandReadingPayment,

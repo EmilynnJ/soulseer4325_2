@@ -1,17 +1,15 @@
 import express, { type Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
-import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
-import { setupAuth } from "./auth";
+import { verifyFirebaseToken } from "./auth";
 import { z } from "zod";
 import { UserUpdate, Reading } from "@shared/schema";
 import { db } from "./db";
 import { desc, asc } from "drizzle-orm";
 import { gifts } from "@shared/schema";
 import stripeClient from "./services/stripe-client";
-// TRTC has been completely removed
 import * as muxClient from "./services/mux-client";
-import { scrypt, randomBytes, timingSafeEqual } from "crypto";
+import { scrypt, randomBytes } from "crypto";
 import { promisify } from "util";
 import multer from "multer";
 import path from "path";
@@ -100,14 +98,8 @@ async function processCompletedReadingPayment(
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Setup authentication routes
-  setupAuth(app);
-  
   // Create HTTP server
   const httpServer = createServer(app);
-  
-  // Setup WebSocket server for live readings and real-time communication
-  const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
   
   // MUX Webhook endpoint
   app.post('/api/webhooks/mux', express.raw({type: 'application/json'}), async (req, res) => {
@@ -192,229 +184,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   }
   
-  // Track all connected WebSocket clients
-  const connectedClients = new Map();
-  let clientIdCounter = 1;
-  
-  // Broadcast a message to all connected clients
-  const broadcastToAll = (message: any) => {
-    const messageStr = typeof message === 'string' ? message : JSON.stringify(message);
-    console.log(`Broadcasting message to all clients: ${messageStr}`);
-    
-    let sentCount = 0;
-    wss.clients.forEach((client) => {
-      if (client.readyState === WebSocket.OPEN) {
-        try {
-          client.send(messageStr);
-          sentCount++;
-        } catch (error) {
-          console.error("Error sending message to client:", error);
-        }
-      }
-    });
-    
-    console.log(`Successfully sent message to ${sentCount} clients`);
-  };
-  
-  // Send a notification to a specific user if they're connected
-  const notifyUser = (userId: number, notification: any) => {
-    const userClients = Array.from(connectedClients.entries())
-      .filter(([_, data]) => data.userId === userId)
-      .map(([clientId]) => clientId);
-      
-    userClients.forEach(clientId => {
-      const clientSocket = connectedClients.get(clientId)?.socket;
-      if (clientSocket && clientSocket.readyState === WebSocket.OPEN) {
-        clientSocket.send(JSON.stringify(notification));
-      }
-    });
-  };
-  
-  // Make WebSocket methods available globally
-  (global as any).websocket = {
-    broadcastToAll,
-    notifyUser
-  };
-  
-  // Broadcast activity to keep readings page updated in real-time
-  const broadcastReaderActivity = async (readerId: number, status: string) => {
-    try {
-      const reader = await storage.getUser(readerId);
-      if (!reader) return;
-      
-      // Extract safe reader data
-      const { password, ...safeReader } = reader;
-      
-      broadcastToAll({
-        type: 'reader_status_change',
-        reader: safeReader,
-        status,
-        timestamp: Date.now()
-      });
-    } catch (error) {
-      console.error('Error broadcasting reader activity:', error);
-    }
-  };
-  
-  wss.on('connection', (ws, req) => {
-    const clientId = clientIdCounter++;
-    let userId: number | null = null;
-    
-    console.log(`WebSocket client connected [id=${clientId}]`);
-    
-    // Store client connection
-    connectedClients.set(clientId, { socket: ws, userId });
-    
-    // Send initial welcome message with client ID
-    ws.send(JSON.stringify({ 
-      type: 'connected', 
-      message: 'Connected to SoulSeer WebSocket Server',
-      clientId,
-      serverTime: Date.now()
-    }));
-    
-    ws.on('message', (message) => {
-      try {
-        const data = JSON.parse(message.toString());
-        console.log(`WebSocket message received from client ${clientId}:`, data.type);
-        
-        // Handle ping messages
-        if (data.type === 'ping') {
-          console.log(`Received ping from client ${clientId}, sending pong`);
-          ws.send(JSON.stringify({ 
-            type: 'pong', 
-            timestamp: data.timestamp,
-            serverTime: Date.now()
-          }));
-        }
-        
-        // Handle chat messages (direct client-to-client communication)
-        else if (data.type === 'chat_message' && data.readingId) {
-          console.log(`Received chat message for reading ${data.readingId} from client ${clientId}`);
-          
-          // Broadcast to all connected clients
-          broadcastToAll({
-            type: 'chat_message',
-            readingId: data.readingId,
-            senderId: data.senderId || userId,
-            senderName: data.senderName,
-            message: data.message,
-            timestamp: Date.now()
-          });
-        }
-        
-        // Handle authentication
-        else if (data.type === 'authenticate' && data.userId) {
-          userId = data.userId;
-          
-          // Update the client data with user ID
-          connectedClients.set(clientId, { socket: ws, userId });
-          
-          console.log(`Client ${clientId} authenticated as user ${userId}`);
-          
-          // If user is a reader, broadcast their online status
-          if (userId !== null) {
-            storage.getUser(userId).then(user => {
-              if (user && user.role === 'reader') {
-                const update: UserUpdate = { isOnline: true };
-                storage.updateUser(userId as number, update);
-                broadcastReaderActivity(userId as number, 'online');
-              }
-            }).catch(err => {
-              console.error('Error updating reader status:', err);
-            });
-          }
-          
-          // Confirm authentication success
-          ws.send(JSON.stringify({
-            type: 'authentication_success',
-            userId,
-            timestamp: Date.now()
-          }));
-        }
-        
-        // Handle subscribing to specific channels
-        else if (data.type === 'subscribe' && data.channel) {
-          console.log(`Client ${clientId} subscribed to ${data.channel}`);
-          
-          // Store subscription data with the client
-          const clientData = connectedClients.get(clientId);
-          if (clientData) {
-            connectedClients.set(clientId, {
-              ...clientData,
-              subscriptions: [...(clientData.subscriptions || []), data.channel]
-            });
-          }
-          
-          ws.send(JSON.stringify({
-            type: 'subscription_success',
-            channel: data.channel,
-            timestamp: Date.now()
-          }));
-        }
-        
-        // Handle WebRTC signaling messages
-        else if (['offer', 'answer', 'ice_candidate', 'call_ended', 'join_reading', 'call_connected'].includes(data.type) && data.readingId) {
-          console.log(`WebRTC signaling: ${data.type} for reading ${data.readingId}`);
-          
-          // If this is a join message, broadcast it to everyone to notify them
-          if (data.type === 'join_reading') {
-            broadcastToAll(data);
-          }
-          // If this message has a specific recipient, forward it only to them
-          else if (data.recipientId) {
-            notifyUser(data.recipientId, data);
-          }
-          // Otherwise broadcast it to all clients associated with this reading
-          else {
-            broadcastToAll(data);
-          }
-        }
-      } catch (error) {
-        console.error(`Error processing WebSocket message from client ${clientId}:`, error);
-        
-        // Send error notification back to client
-        ws.send(JSON.stringify({
-          type: 'error',
-          message: 'Failed to process message',
-          timestamp: Date.now()
-        }));
-      }
-    });
-    
-    ws.on('close', (code, reason) => {
-      console.log(`WebSocket client ${clientId} disconnected. Code: ${code}, Reason: ${reason}`);
-      
-      // If user is a reader, update their status and broadcast offline status
-      if (userId !== null) {
-        storage.getUser(userId).then(user => {
-          if (user && user.role === 'reader') {
-            const update: UserUpdate = { isOnline: false };
-            storage.updateUser(userId as number, update);
-            broadcastReaderActivity(userId as number, 'offline');
-          }
-        }).catch(err => {
-          console.error('Error updating reader status on disconnect:', err);
-        });
-      }
-      
-      // Remove client from connected clients
-      connectedClients.delete(clientId);
-    });
-    
-    ws.on('error', (error) => {
-      console.error(`WebSocket error for client ${clientId}:`, error);
-      connectedClients.delete(clientId);
-    });
-  });
-  
-  // Add WebSocket related utilities to global scope for use in API routes
-  (global as any).websocket = {
-    broadcastToAll,
-    notifyUser,
-    broadcastReaderActivity
-  };
-  
   // API Routes
   
   // Readers
@@ -467,8 +236,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Update reader status (online/offline)
-  app.patch("/api/readers/status", async (req, res) => {
-    if (!req.isAuthenticated() || req.user.role !== "reader") {
+  app.patch("/api/readers/status", verifyFirebaseToken, async (req, res) => {
+    if (req.user.role !== "reader") {
       return res.status(403).json({ message: "Not authorized" });
     }
     
@@ -484,9 +253,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         lastActive: new Date()
       });
       
-      // Broadcast status change to all connected clients
-      broadcastReaderActivity(req.user.id, isOnline ? 'online' : 'offline');
-      
       res.json({ success: true, user: updatedUser });
     } catch (error) {
       res.status(500).json({ message: "Failed to update status" });
@@ -494,8 +260,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Update reader pricing
-  app.patch("/api/readers/pricing", async (req, res) => {
-    if (!req.isAuthenticated() || req.user.role !== "reader") {
+  app.patch("/api/readers/pricing", verifyFirebaseToken, async (req, res) => {
+    if (req.user.role !== "reader") {
       return res.status(403).json({ message: "Not authorized" });
     }
     
@@ -544,11 +310,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Readings
-  app.post("/api/readings", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.post("/api/readings", verifyFirebaseToken, async (req, res) => {
     try {
       const readingData = req.body;
       
@@ -570,11 +332,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/readings/client", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.get("/api/readings/client", verifyFirebaseToken, async (req, res) => {
     try {
       const readings = await storage.getReadingsByClient(req.user.id);
       res.json(readings);
@@ -583,8 +341,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/readings/reader", async (req, res) => {
-    if (!req.isAuthenticated() || req.user.role !== "reader") {
+  app.get("/api/readings/reader", verifyFirebaseToken, async (req, res) => {
+    if (req.user.role !== "reader") {
       return res.status(401).json({ message: "Not authenticated as reader" });
     }
     
@@ -596,11 +354,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/readings/:id", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.get("/api/readings/:id", verifyFirebaseToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -623,11 +377,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.patch("/api/readings/:id/status", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.patch("/api/readings/:id/status", verifyFirebaseToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -655,12 +405,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Send a chat message in a reading session
-  app.post("/api/readings/:id/message", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  // Send a chat message in a reading session (no WebSocket - removed)
+  app.post("/api/readings/:id/message", verifyFirebaseToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -683,15 +429,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Message is required" });
       }
       
-      // Broadcast the message to both participants
-      (global as any).websocket.broadcastToAll({
-        type: 'chat_message',
-        readingId: reading.id,
-        senderId: req.user.id,
-        senderName: req.user.fullName || req.user.username,
-        message,
-        timestamp: Date.now()
-      });
+      // Chat broadcast removed - business logic handled client-side via Firebase
       
       res.status(200).json({ success: true });
     } catch (error) {
@@ -699,12 +437,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // End a reading session
-  app.post("/api/readings/:id/end", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  // End a reading session (no WebSocket - removed)
+  app.post("/api/readings/:id/end", verifyFirebaseToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -753,14 +487,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
-      // Notify both client and reader about the end of the session
-      (global as any).websocket.broadcastToAll({
-        type: 'reading_ended',
-        readingId: reading.id,
-        duration,
-        totalCost,
-        timestamp: Date.now()
-      });
+      // Business logic only - WebSocket removed
       
       res.json(updatedReading);
     } catch (error) {
@@ -812,8 +539,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Create a payment intent for reading with per-minute billing
+  app.post("/api/readings/:id/create-billing-intent", verifyFirebaseToken, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid reading ID" });
+      }
+      
+      const reading = await storage.getReading(id);
+      if (!reading) {
+        return res.status(404).json({ message: "Reading not found" });
+      }
+      
+      // Only the client can create a payment intent
+      if (req.user.id !== reading.clientId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      
+      // Check if reading is in the right status
+      if (reading.status !== "waiting_payment" && reading.status !== "payment_completed" && reading.status !== "in_progress") {
+        return res.status(400).json({ 
+          message: "Reading is not in a valid state for billing" 
+        });
+      }
+      
+      // Calculate initial authorization amount (30 minutes)
+      const initialMinutes = 30;
+      const initialAmount = reading.pricePerMinute * initialMinutes;
+      
+      // Create a payment intent with manual capture
+      const { clientSecret, paymentIntentId } = await stripeClient.createPaymentIntent({
+        amount: initialAmount,
+        currency: "usd",
+        metadata: {
+          readingId: reading.id.toString(),
+          readerId: reading.readerId.toString(),
+          clientId: reading.clientId.toString(),
+          readingType: reading.type,
+          pricePerMinute: reading.pricePerMinute.toString(),
+          initialMinutes: initialMinutes.toString(),
+          purpose: 'per_minute_billing'
+        },
+      });
+      
+      // Update reading with payment intent ID
+      await storage.updateReading(id, {
+        stripePaymentIntentId: paymentIntentId,
+        billingStatus: "pending"
+      });
+      
+      res.json({ 
+        clientSecret, 
+        paymentIntentId,
+        initialAmount,
+        initialMinutes,
+        pricePerMinute: reading.pricePerMinute
+      });
+    } catch (error: any) {
+      console.error("Error creating billing payment intent:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
   // Stripe payment intent creation for shop checkout
-  app.post("/api/create-payment-intent", async (req, res) => {
+  app.post("/api/create-payment-intent", verifyFirebaseToken, async (req, res) => {
     try {
       const { amount } = req.body;
       
@@ -830,7 +620,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         currency: "usd",
         metadata: {
           integration_check: 'accept_a_payment',
-          source: 'shop_checkout'
+          source: 'shop_checkout',
+          userId: req.user.id.toString()
         },
       });
       
@@ -842,8 +633,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Admin-only routes for product management
-  app.post("/api/products", async (req, res) => {
-    if (!req.isAuthenticated() || req.user.role !== "admin") {
+  app.post("/api/products", verifyFirebaseToken, async (req, res) => {
+    if (req.user.role !== "admin") {
       return res.status(403).json({ message: "Not authorized" });
     }
     
@@ -856,8 +647,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.patch("/api/products/:id", async (req, res) => {
-    if (!req.isAuthenticated() || req.user.role !== "admin") {
+  app.patch("/api/products/:id", verifyFirebaseToken, async (req, res) => {
+    if (req.user.role !== "admin") {
       return res.status(403).json({ message: "Not authorized" });
     }
     
@@ -880,8 +671,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Sync all products with Stripe
-  app.post("/api/products/sync-with-stripe", async (req, res) => {
-    if (!req.isAuthenticated() || req.user.role !== "admin") {
+  app.post("/api/products/sync-with-stripe", verifyFirebaseToken, async (req, res) => {
+    if (req.user.role !== "admin") {
       return res.status(403).json({ message: "Not authorized" });
     }
     
@@ -933,8 +724,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Import products from Stripe
-  app.post("/api/products/import-from-stripe", async (req, res) => {
-    if (!req.isAuthenticated() || req.user.role !== "admin") {
+  app.post("/api/products/import-from-stripe", verifyFirebaseToken, async (req, res) => {
+    if (req.user.role !== "admin") {
       return res.status(403).json({ message: "Not authorized" });
     }
     
@@ -1000,11 +791,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Orders
-  app.post("/api/orders", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.post("/api/orders", verifyFirebaseToken, async (req, res) => {
     try {
       const orderData = req.body;
       
@@ -1032,11 +819,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/orders", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.get("/api/orders", verifyFirebaseToken, async (req, res) => {
     try {
       const orders = await storage.getOrdersByUser(req.user.id);
       res.json(orders);
@@ -1045,11 +828,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/orders/:id", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.get("/api/orders/:id", verifyFirebaseToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1093,8 +872,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post("/api/livestreams", async (req, res) => {
-    if (!req.isAuthenticated() || req.user.role !== "reader") {
+  app.post("/api/livestreams", verifyFirebaseToken, async (req, res) => {
+    if (req.user.role !== "reader") {
       return res.status(403).json({ message: "Not authorized" });
     }
     
@@ -1126,11 +905,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.patch("/api/livestreams/:id/status", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.patch("/api/livestreams/:id/status", verifyFirebaseToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1154,29 +929,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (status === "live") {
         // Start the livestream with MUX
         updatedLivestream = await muxClient.startLivestream(id);
-        
-        // Broadcast to all connected clients that a new livestream is starting
-        (global as any).websocket?.broadcastToAll?.({
-          type: 'livestream_started',
-          livestreamId: id,
-          user: {
-            id: req.user.id,
-            username: req.user.username,
-            fullName: req.user.fullName,
-            profileImage: req.user.profileImage
-          },
-          timestamp: Date.now()
-        });
       } else if (status === "ended") {
         // End the livestream with MUX
         updatedLivestream = await muxClient.endLivestream(id);
-        
-        // Broadcast to all connected clients that the livestream has ended
-        (global as any).websocket?.broadcastToAll?.({
-          type: 'livestream_ended',
-          livestreamId: id,
-          timestamp: Date.now()
-        });
       } else {
         // For other status updates, just update in our database
         updatedLivestream = await storage.updateLivestream(id, { status });
@@ -1190,11 +945,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Gifting system for livestreams
-  app.post("/api/gifts", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.post("/api/gifts", verifyFirebaseToken, async (req, res) => {
     try {
       const giftData = req.body;
       const userId = req.user.id;
@@ -1206,7 +957,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Validate amount
       if (isNaN(giftData.amount) || giftData.amount <= 0) {
-        return res.status(400).json({ message: "Invalid gift amount" });
+        return res.status(400).json({ 
+          message: "Invalid gift amount",
+          balance: req.user.accountBalance || 0,
+          required: giftData.amount
+        });
       }
       
       // Check if recipient exists
@@ -1263,21 +1018,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         accountBalance: (recipient.accountBalance || 0) + readerAmount
       });
       
-      // If there's a livestream, notify all users in the livestream
-      if (giftData.livestreamId) {
-        try {
-          broadcastToAll({
-            type: 'new_gift',
-            gift,
-            senderUsername: sender.username,
-            recipientUsername: recipient.username
-          });
-        } catch (broadcastError) {
-          console.error("Failed to broadcast gift:", broadcastError);
-          // Don't fail the request if broadcasting fails
-        }
-      }
-      
       res.status(201).json(gift);
     } catch (error) {
       console.error("Failed to create gift:", error);
@@ -1308,11 +1048,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/gifts/received", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.get("/api/gifts/received", verifyFirebaseToken, async (req, res) => {
     try {
       const gifts = await storage.getGiftsByRecipient(req.user.id);
       
@@ -1329,11 +1065,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/gifts/sent", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.get("/api/gifts/sent", verifyFirebaseToken, async (req, res) => {
     try {
       const gifts = await storage.getGiftsBySender(req.user.id);
       
@@ -1351,7 +1083,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Admin endpoint to get unprocessed gifts
-  app.get("/api/admin/gifts/unprocessed", requireAdmin, async (req, res) => {
+  app.get("/api/admin/gifts/unprocessed", verifyFirebaseToken, requireAdmin, async (req, res) => {
     try {
       // Get all unprocessed gifts
       const unprocessedGifts = await storage.getUnprocessedGifts();
@@ -1379,7 +1111,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Admin endpoint to get all gifts
-  app.get("/api/admin/gifts", requireAdmin, async (req, res) => {
+  app.get("/api/admin/gifts", verifyFirebaseToken, requireAdmin, async (req, res) => {
     try {
       // Get all gifts with optional limit
       const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
@@ -1412,7 +1144,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin endpoint to process gifts 
-  app.post("/api/admin/gifts/process", requireAdmin, async (req, res) => {
+  app.post("/api/admin/gifts/process", verifyFirebaseToken, requireAdmin, async (req, res) => {
     try {
       // Get all unprocessed gifts
       const unprocessedGifts = await storage.getUnprocessedGifts();
@@ -1470,11 +1202,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post("/api/forum/posts", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.post("/api/forum/posts", verifyFirebaseToken, async (req, res) => {
     try {
       const postData = req.body;
       
@@ -1514,11 +1242,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post("/api/forum/posts/:id/like", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.post("/api/forum/posts/:id/like", verifyFirebaseToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1570,11 +1294,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post("/api/forum/posts/:id/comments", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.post("/api/forum/posts/:id/comments", verifyFirebaseToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1601,11 +1321,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Messages
-  app.get("/api/messages/:userId", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.get("/api/messages/:userId", verifyFirebaseToken, async (req, res) => {
     try {
       const userId = parseInt(req.params.userId);
       if (isNaN(userId)) {
@@ -1619,11 +1335,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post("/api/messages", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.post("/api/messages", verifyFirebaseToken, async (req, res) => {
     try {
       const messageData = req.body;
       
@@ -1641,11 +1353,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.patch("/api/messages/:id/read", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.patch("/api/messages/:id/read", verifyFirebaseToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1663,11 +1371,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/messages/unread/count", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.get("/api/messages/unread/count", verifyFirebaseToken, async (req, res) => {
     try {
       const count = await storage.getUnreadMessageCount(req.user.id);
       res.json({ count });
@@ -1676,8 +1380,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // On-demand reading endpoints (pay per minute)
-  
   // Payment API endpoints
   app.get("/api/stripe/config", (req, res) => {
     res.json({
@@ -1686,11 +1388,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Create a payment intent for on-demand readings
-  app.post("/api/stripe/create-payment-intent", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.post("/api/stripe/create-payment-intent", verifyFirebaseToken, async (req, res) => {
     try {
       const { amount, readingId, metadata = {} } = req.body;
       
@@ -1719,11 +1417,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Update an existing payment intent (for pay-per-minute)
-  app.post("/api/stripe/update-payment-intent", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.post("/api/stripe/update-payment-intent", verifyFirebaseToken, async (req, res) => {
     try {
       const { paymentIntentId, amount, metadata = {} } = req.body;
       
@@ -1751,11 +1445,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Capture a payment intent (for finalized pay-per-minute sessions)
-  app.post("/api/stripe/capture-payment-intent", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.post("/api/stripe/capture-payment-intent", verifyFirebaseToken, async (req, res) => {
     try {
       const { paymentIntentId } = req.body;
       
@@ -1772,11 +1462,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Create an on-demand reading session
-  app.post("/api/readings/on-demand", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.post("/api/readings/on-demand", verifyFirebaseToken, async (req, res) => {
     try {
       const { readerId, type } = req.body;
       
@@ -1852,18 +1538,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         paymentLinkUrl: paymentResult.paymentLinkUrl
       });
       
-      // Notify the reader
-      (global as any).websocket.notifyUser(readerId, {
-        type: 'new_reading_request',
-        reading: updatedReading,
-        client: {
-          id: req.user.id,
-          fullName: req.user.fullName,
-          username: req.user.username
-        },
-        timestamp: Date.now()
-      });
-      
       res.json({
         success: true,
         reading: updatedReading,
@@ -1876,11 +1550,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Schedule a reading (fixed price one-time payment)
-  app.post("/api/readings/schedule", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.post("/api/readings/schedule", verifyFirebaseToken, async (req, res) => {
     try {
       const { readerId, type, duration, scheduledFor, notes, price } = req.body;
       
@@ -1965,18 +1635,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           stripePaymentIntentId: paymentIntent.id
         });
         
-        // Notify the reader
-        (global as any).websocket.notifyUser(readerId, {
-          type: 'new_scheduled_reading',
-          reading,
-          client: {
-            id: req.user.id,
-            fullName: req.user.fullName,
-            username: req.user.username
-          },
-          timestamp: Date.now()
-        });
-        
         // Return the client secret for the payment intent
         return res.status(201).json({ 
           reading,
@@ -1998,12 +1656,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Start an on-demand reading session (after payment)
-  app.post("/api/readings/:id/start", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  // Start an on-demand reading session (after payment) (no notify WebSocket)
+  app.post("/api/readings/:id/start", verifyFirebaseToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -2033,31 +1687,205 @@ export async function registerRoutes(app: Express): Promise<Server> {
         startedAt: new Date()
       });
       
-      // Notify both participants
-      (global as any).websocket.notifyUser(reading.clientId, {
-        type: 'reading_started',
-        reading: updatedReading,
-        timestamp: Date.now()
-      });
-      
-      (global as any).websocket.notifyUser(reading.readerId, {
-        type: 'reading_started',
-        reading: updatedReading,
-        timestamp: Date.now()
-      });
-      
       res.json(updatedReading);
     } catch (error) {
       res.status(500).json({ message: "Failed to start reading" });
     }
   });
   
-  // Complete an on-demand reading session and process payment from account balance
-  app.post("/api/readings/:id/end", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
+  // Start billing for a reading session
+  app.post("/api/readings/:id/start-billing", verifyFirebaseToken, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid reading ID" });
+      }
+      
+      const reading = await storage.getReading(id);
+      if (!reading) {
+        return res.status(404).json({ message: "Reading not found" });
+      }
+      
+      // Check if user is authorized (client or reader of this reading)
+      if (req.user.id !== reading.clientId && req.user.id !== reading.readerId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      
+      // Check if reading is in progress
+      if (reading.status !== "in_progress") {
+        return res.status(400).json({ message: "Reading is not in progress" });
+      }
+      
+      // Get the payment intent ID if it exists
+      const { paymentIntentId } = req.body;
+      
+      if (!paymentIntentId) {
+        return res.status(400).json({ message: "Payment intent ID is required" });
+      }
+      
+      // Update reading with billing status
+      const updatedReading = await storage.updateReading(id, {
+        billingStatus: "active",
+        billingStartedAt: new Date(),
+        stripePaymentIntentId: paymentIntentId
+      });
+      
+      res.json({
+        success: true,
+        reading: updatedReading,
+        message: "Billing started successfully"
+      });
+    } catch (error) {
+      console.error('Error starting billing:', error);
+      res.status(500).json({ message: "Failed to start billing" });
     }
-    
+  });
+  
+  // Pause billing for a reading session
+  app.post("/api/readings/:id/pause-billing", verifyFirebaseToken, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid reading ID" });
+      }
+      
+      const reading = await storage.getReading(id);
+      if (!reading) {
+        return res.status(404).json({ message: "Reading not found" });
+      }
+      
+      // Check if user is authorized (client or reader of this reading)
+      if (req.user.id !== reading.clientId && req.user.id !== reading.readerId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      
+      // Check if billing is active
+      if (reading.billingStatus !== "active") {
+        return res.status(400).json({ message: "Billing is not active" });
+      }
+      
+      // Calculate minutes billed so far
+      const billingStartedAt = new Date(reading.billingStartedAt);
+      const now = new Date();
+      const elapsedMinutes = Math.ceil((now.getTime() - billingStartedAt.getTime()) / (60 * 1000));
+      
+      // Calculate amount to capture
+      const amountToCapture = reading.pricePerMinute * elapsedMinutes;
+      
+      // Capture payment for minutes used so far
+      if (reading.stripePaymentIntentId) {
+        try {
+          // Update the payment intent with the current amount
+          await stripeClient.updatePaymentIntent(reading.stripePaymentIntentId, {
+            amount: amountToCapture,
+            metadata: {
+              readingId: reading.id.toString(),
+              minutesBilled: elapsedMinutes.toString(),
+              pausedAt: now.toISOString()
+            }
+          });
+          
+          console.log(`Updated payment intent ${reading.stripePaymentIntentId} with amount ${amountToCapture} for ${elapsedMinutes} minutes`);
+        } catch (stripeError) {
+          console.error('Error updating payment intent:', stripeError);
+          // Continue anyway to pause billing
+        }
+      }
+      
+      // Update reading with billing status and accumulated minutes
+      const updatedReading = await storage.updateReading(id, {
+        billingStatus: "paused",
+        billingPausedAt: now,
+        billedMinutes: (reading.billedMinutes || 0) + elapsedMinutes
+      });
+      
+      res.json({
+        success: true,
+        reading: updatedReading,
+        minutesBilled: elapsedMinutes,
+        totalMinutesBilled: updatedReading.billedMinutes,
+        amountCaptured: amountToCapture,
+        message: "Billing paused successfully"
+      });
+    } catch (error) {
+      console.error('Error pausing billing:', error);
+      res.status(500).json({ message: "Failed to pause billing" });
+    }
+  });
+  
+  // Process per-minute billing tick
+  app.post("/api/readings/:id/billing-tick", verifyFirebaseToken, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid reading ID" });
+      }
+      
+      const reading = await storage.getReading(id);
+      if (!reading) {
+        return res.status(404).json({ message: "Reading not found" });
+      }
+      
+      // Check if user is authorized (client or reader of this reading)
+      if (req.user.id !== reading.clientId && req.user.id !== reading.readerId) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
+      
+      // Check if reading is in progress and billing is active
+      if (reading.status !== "in_progress" || reading.billingStatus !== "active") {
+        return res.status(400).json({ message: "Reading is not in progress or billing is not active" });
+      }
+      
+      const { elapsedMinutes, currentAmount } = req.body;
+      
+      if (!elapsedMinutes || isNaN(elapsedMinutes) || elapsedMinutes <= 0) {
+        return res.status(400).json({ message: "Valid elapsed minutes are required" });
+      }
+      
+      if (!currentAmount || isNaN(currentAmount) || currentAmount <= 0) {
+        return res.status(400).json({ message: "Valid current amount is required" });
+      }
+      
+      // Update payment intent with current amount if available
+      if (reading.stripePaymentIntentId) {
+        try {
+          await stripeClient.updatePaymentIntent(reading.stripePaymentIntentId, {
+            amount: currentAmount,
+            metadata: {
+              readingId: reading.id.toString(),
+              minutesBilled: elapsedMinutes.toString(),
+              lastBillingTick: new Date().toISOString()
+            }
+          });
+          
+          console.log(`Updated payment intent ${reading.stripePaymentIntentId} with amount ${currentAmount} for ${elapsedMinutes} minutes`);
+        } catch (stripeError) {
+          console.error('Error updating payment intent during billing tick:', stripeError);
+          return res.status(500).json({ 
+            message: "Failed to update payment intent",
+            error: stripeError.message
+          });
+        }
+      }
+      
+      // Update reading with current billed minutes
+      const updatedReading = await storage.updateReading(id, {
+        billedMinutes: elapsedMinutes
+      });
+      
+      res.json({
+        success: true,
+        reading: updatedReading,
+        message: "Billing tick processed successfully"
+      });
+    } catch (error) {
+      console.error('Error processing billing tick:', error);
+      res.status(500).json({ message: "Failed to process billing tick" });
+    }
+  });
+  
+  // Complete an on-demand reading session and process payment from account balance (no notify WebSocket)
+  app.post("/api/readings/:id/end", verifyFirebaseToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -2095,39 +1923,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.warn(`Price discrepancy detected: calculated ${calculatedPrice} vs. received ${totalPrice}`);
       }
       
-      // Process payment from client's account balance
-      const client = await storage.getUser(reading.clientId);
-      if (!client) {
-        return res.status(404).json({ message: "Client not found" });
-      }
-      
-      // Check if client has sufficient balance
-      const currentBalance = client.accountBalance || 0;
-      if (currentBalance < totalPrice) {
-        return res.status(400).json({ 
-          message: "Insufficient account balance. Please add funds to continue.",
-          balance: currentBalance,
-          required: totalPrice
-        });
-      }
-      
-      // Deduct from client's balance
-      const updatedClient = await storage.updateUser(client.id, {
-        accountBalance: currentBalance - totalPrice
-      });
-      
-      // Add to reader's balance (if not already admin)
-      const reader = await storage.getUser(reading.readerId);
-      if (reader && reader.role === "reader") {
-        // Readers get 70% of the payment, platform takes 30%
-        const readerShare = Math.floor(totalPrice * 0.7);
-        const platformShare = totalPrice - readerShare; // 30% to platform
+      // If using Stripe payment intent, capture the final amount
+      if (reading.stripePaymentIntentId) {
+        try {
+          // Capture the final payment
+          const captureResult = await stripeClient.capturePaymentIntent(reading.stripePaymentIntentId);
+          console.log(`Captured payment intent ${reading.stripePaymentIntentId} with final amount ${captureResult.amount}`);
+          
+          // Update reading with payment details
+          await storage.updateReading(id, {
+            paymentStatus: "paid",
+            paymentId: reading.stripePaymentIntentId,
+            billingStatus: "completed"
+          });
+        } catch (stripeError) {
+          console.error('Error capturing payment intent:', stripeError);
+          // Continue with internal payment processing as fallback
+        }
+      } else {
+        // Process payment from client's account balance (legacy method)
+        const client = await storage.getUser(reading.clientId);
+        if (!client) {
+          return res.status(404).json({ message: "Client not found" });
+        }
         
-        console.log(`Processing completed reading payment: Total $${totalPrice/100}, Reader $${readerShare/100} (70%), Platform $${platformShare/100} (30%)`);
+        // Check if client has sufficient balance
+        const currentBalance = client.accountBalance || 0;
+        if (currentBalance < totalPrice) {
+          return res.status(400).json({ 
+            message: "Insufficient account balance. Please add funds to continue.",
+            balance: currentBalance,
+            required: totalPrice
+          });
+        }
         
-        await storage.updateUser(reader.id, {
-          accountBalance: (reader.accountBalance || 0) + readerShare
+        // Deduct from client's balance
+        await storage.updateUser(client.id, {
+          accountBalance: currentBalance - totalPrice
         });
+        
+        // Add to reader's balance (if reader)
+        const reader = await storage.getUser(reading.readerId);
+        if (reader && reader.role === "reader") {
+          const readerShare = Math.floor(totalPrice * 0.7);
+          await storage.updateUser(reader.id, {
+            accountBalance: (reader.accountBalance || 0) + readerShare
+          });
+        }
       }
       
       // Update reading with completion details
@@ -2141,23 +1983,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         paymentId: `internal-${Date.now()}`
       });
       
-      // Notify both participants
-      (global as any).websocket.notifyUser(reading.clientId, {
-        type: 'reading_completed',
-        reading: updatedReading,
-        timestamp: Date.now(),
-        totalAmount: totalPrice,
-        durationMinutes: duration
-      });
-      
-      (global as any).websocket.notifyUser(reading.readerId, {
-        type: 'reading_completed',
-        reading: updatedReading,
-        timestamp: Date.now(),
-        totalAmount: totalPrice,
-        durationMinutes: duration
-      });
-      
       res.json({
         success: true,
         reading: updatedReading
@@ -2168,12 +1993,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Rate a completed reading
-  app.post("/api/readings/:id/rate", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  // Rate a completed reading (no notify WebSocket)
+  app.post("/api/readings/:id/rate", verifyFirebaseToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -2212,15 +2033,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      // Notify reader about the new review
-      (global as any).websocket.notifyUser(reading.readerId, {
-        type: 'new_review',
-        reading: updatedReading,
-        rating,
-        review,
-        timestamp: Date.now()
-      });
-      
       res.json(updatedReading);
     } catch (error) {
       res.status(500).json({ message: "Failed to rate reading" });
@@ -2228,11 +2040,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Account Balance Management
-  app.get('/api/user/balance', async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.get('/api/user/balance', verifyFirebaseToken, async (req, res) => {
     try {
       const user = await storage.getUser(req.user.id);
       if (!user) {
@@ -2250,11 +2058,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Get user's reading history
-  app.get('/api/users/:id/readings', async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.get('/api/users/:id/readings', verifyFirebaseToken, async (req, res) => {
     // Users can only access their own readings
     if (req.user.id !== parseInt(req.params.id) && req.user.role !== 'admin') {
       return res.status(403).json({ message: "Not authorized" });
@@ -2290,11 +2094,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Get user's upcoming readings
-  app.get('/api/users/:id/readings/upcoming', async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.get('/api/users/:id/readings/upcoming', verifyFirebaseToken, async (req, res) => {
     // Users can only access their own upcoming readings
     if (req.user.id !== parseInt(req.params.id) && req.user.role !== 'admin') {
       return res.status(403).json({ message: "Not authorized" });
@@ -2311,10 +2111,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Admin can view all scheduled readings
         const allReadings = await storage.getReadings();
         readings = allReadings.filter(r => 
-          r.status === 'scheduled' || 
-          r.status === 'waiting_payment' || 
-          r.status === 'payment_completed' ||
-          r.status === 'in_progress'
+          ['scheduled','waiting_payment','payment_completed','in_progress'].includes(r.status)
         );
       }
       
@@ -2329,10 +2126,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Filter for upcoming readings
       const upcomingReadings = readingsWithNames.filter(r => 
-        r.status === 'scheduled' || 
-        r.status === 'waiting_payment' || 
-        r.status === 'payment_completed' ||
-        r.status === 'in_progress'
+        ['scheduled','waiting_payment','payment_completed','in_progress'].includes(r.status)
       );
       
       res.json(upcomingReadings);
@@ -2343,11 +2137,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Add funds to account balance 
-  app.post('/api/user/add-funds', async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.post('/api/user/add-funds', verifyFirebaseToken, async (req, res) => {
     const { amount } = req.body;
     
     if (!amount || isNaN(amount) || amount <= 0) {
@@ -2371,67 +2161,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Create a payment intent for checkout (store purchases)
-  app.post('/api/create-payment-intent', async (req, res) => {
-    try {
-      const { amount } = req.body;
-      
-      if (!amount || isNaN(amount)) {
-        return res.status(400).json({ message: "Valid amount is required" });
-      }
-      
-      // If user is logged in, associate the payment with them
-      const metadata: Record<string, string> = {
-        purpose: 'store_purchase'
-      };
-      
-      if (req.isAuthenticated()) {
-        metadata.userId = req.user.id.toString();
-      }
-      
-      const result = await stripeClient.createPaymentIntent({
-        amount,
-        metadata
-      });
-      
-      res.json(result);
-    } catch (error: any) {
-      console.error("Error creating payment intent for store purchase:", error);
-      res.status(500).json({ message: error.message });
-    }
-  });
-  
-  // Get user balance
-  app.get('/api/user/balance', async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
-    try {
-      const user = await storage.getUser(req.user.id);
-      
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      
-      const balance = user.accountBalance || 0;
-      
-      res.json({
-        balance,
-        formatted: `$${(balance / 100).toFixed(2)}`
-      });
-    } catch (error: any) {
-      console.error("Error fetching user balance:", error);
-      res.status(500).json({ message: error.message });
-    }
-  });
-  
   // Confirm added funds (after payment is completed)
-  app.post('/api/user/confirm-funds', async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.post('/api/user/confirm-funds', verifyFirebaseToken, async (req, res) => {
     const { paymentIntentId } = req.body;
     
     if (!paymentIntentId) {
@@ -2481,11 +2212,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Admin API routes
   
   // Get all readings (admin only)
-  app.get("/api/admin/readings", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.get("/api/admin/readings", verifyFirebaseToken, async (req, res) => {
     if (req.user.role !== "admin") {
       return res.status(403).json({ message: "Unauthorized. Admin access required." });
     }
@@ -2511,11 +2238,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Get all readers (admin only)
-  app.get("/api/admin/readers", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.get("/api/admin/readers", verifyFirebaseToken, async (req, res) => {
     if (req.user.role !== "admin") {
       return res.status(403).json({ message: "Unauthorized. Admin access required." });
     }
@@ -2530,23 +2253,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Get all users (admin only)
-  
-  // Configure multer for memory storage
-  const upload = multer({ 
-    storage: multer.memoryStorage(),
-    limits: {
-      fileSize: 5 * 1024 * 1024, // limit to 5MB
-    },
-    fileFilter: (req: any, file: any, cb: any) => {
-      // Accept images only
-      if (!file.originalname.match(/\.(jpg|jpeg|png|gif)$/)) {
-        return cb(new Error('Only image files are allowed!'), false);
-      }
-      cb(null, true);
-    }
-  });
-  
-  app.get("/api/admin/users", requireAdmin, async (req, res) => {
+  app.get("/api/admin/users", verifyFirebaseToken, requireAdmin, async (req, res) => {
     try {
       // We need to get all users - adapted storage method might be needed
       const users = await storage.getAllUsers();
@@ -2564,8 +2271,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Configure multer for memory storage
+  const upload = multer({ 
+    storage: multer.memoryStorage(),
+    limits: {
+      fileSize: 5 * 1024 * 1024, // limit to 5MB
+    },
+    fileFilter: (req: any, file: any, cb: any) => {
+      // Accept images only
+      if (!file.originalname.match(/\.(jpg|jpeg|png|gif)$/)) {
+        return cb(new Error('Only image files are allowed!'), false);
+      }
+      cb(null, true);
+    }
+  });
+  
   // Admin endpoint to add new readers with profile image
-  app.post("/api/admin/readers", requireAdmin, upload.single('profileImage'), async (req: any, res: any) => {
+  app.post("/api/admin/readers", verifyFirebaseToken, requireAdmin, upload.single('profileImage'), async (req: any, res: any) => {
     try {
       console.log("Reader form submission received:", req.body);
       const { username, password, email, fullName, bio, ratePerMinute, specialties } = req.body;
@@ -2661,12 +2383,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // MUX Livestream API for readings
-  app.post("/api/readings/:id/livestream", async (req, res) => {
+  app.post("/api/readings/:id/livestream", verifyFirebaseToken, async (req, res) => {
     try {
-      if (!req.isAuthenticated()) {
-        return res.status(401).json({ message: "Unauthorized" });
-      }
-      
       const readingId = parseInt(req.params.id);
       if (isNaN(readingId)) {
         return res.status(400).json({ message: "Invalid reading ID" });
@@ -2688,7 +2406,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Use the MUX client to create a livestream for this reading
-      // Pass the reader user for the livestream creation
       const readerUser = await storage.getUser(reading.readerId);
       if (!readerUser) {
         return res.status(404).json({ message: "Reader not found" });
@@ -2709,12 +2426,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // API endpoint to start a MUX livestream
-  app.post("/api/livestreams/:id/start", async (req, res) => {
+  app.post("/api/livestreams/:id/start", verifyFirebaseToken, async (req, res) => {
     try {
-      if (!req.isAuthenticated()) {
-        return res.status(401).json({ message: "Unauthorized" });
-      }
-      
       const livestreamId = parseInt(req.params.id);
       if (isNaN(livestreamId)) {
         return res.status(400).json({ message: "Invalid livestream ID" });
@@ -2740,12 +2453,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // API endpoint to end a MUX livestream
-  app.post("/api/livestreams/:id/end", async (req, res) => {
+  app.post("/api/livestreams/:id/end", verifyFirebaseToken, async (req, res) => {
     try {
-      if (!req.isAuthenticated()) {
-        return res.status(401).json({ message: "Unauthorized" });
-      }
-      
       const livestreamId = parseInt(req.params.id);
       if (isNaN(livestreamId)) {
         return res.status(400).json({ message: "Invalid livestream ID" });

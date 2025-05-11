@@ -1,4 +1,5 @@
 import { users, type User, type InsertUser, type UserUpdate, readings, type Reading, type InsertReading, products, type Product, type InsertProduct, orders, type Order, type InsertOrder, orderItems, type OrderItem, type InsertOrderItem, livestreams, type Livestream, type InsertLivestream, forumPosts, type ForumPost, type InsertForumPost, forumComments, type ForumComment, type InsertForumComment, messages, type Message, type InsertMessage, gifts, type Gift, type InsertGift } from "@shared/schema";
+import { FirebaseStorage } from "./services/firebase-storage";
 import session from "express-session";
 import createMemoryStore from "memorystore";
 import connectPgSimple from "connect-pg-simple";
@@ -988,5 +989,8 @@ export class DatabaseStorage implements IStorage {
   }
 }
 
-// Use DatabaseStorage instead of MemStorage for production
-export const storage = new DatabaseStorage();
+// Choose storage implementation based on environment
+const isDevelopment = process.env.NODE_ENV === 'development';
+
+// Use FirebaseStorage for production, optionally use DatabaseStorage for development
+export const storage = isDevelopment ? new DatabaseStorage() : new FirebaseStorage();

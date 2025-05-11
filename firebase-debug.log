@@ -1,0 +1,46 @@
+[debug] [2025-05-10T22:11:06.409Z] ----------------------------------------------------------------------
+[debug] [2025-05-10T22:11:06.412Z] Command:       /nix/store/ixbb20farqh1f4fqbmsn6b1ixn8mc8ij-nodejs-20.18.1/bin/node /home/.npm/_npx/ba4f1959e38407b5/node_modules/.bin/firebase init dataconnect --project monospace-1
+[debug] [2025-05-10T22:11:06.412Z] CLI Version:   14.3.1
+[debug] [2025-05-10T22:11:06.413Z] Platform:      linux
+[debug] [2025-05-10T22:11:06.413Z] Node Version:  v20.18.1
+[debug] [2025-05-10T22:11:06.413Z] Time:          Sat May 10 2025 22:11:06 GMT+0000 (Coordinated Universal Time)
+[debug] [2025-05-10T22:11:06.413Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2025-05-10T22:11:06.416Z] >>> [apiv2][query] GET https://firebase-public.firebaseio.com/cli.json [none]
+[debug] [2025-05-10T22:11:06.530Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-05-10T22:11:06.531Z] > authorizing via signed-in user (emilynn992@gmail.com)
+[info] 
+     ######## #### ########  ######## ########     ###     ######  ########
+     ##        ##  ##     ## ##       ##     ##  ##   ##  ##       ##
+     ######    ##  ########  ######   ########  #########  ######  ######
+     ##        ##  ##    ##  ##       ##     ## ##     ##       ## ##
+     ##       #### ##     ## ######## ########  ##     ##  ######  ########
+
+You're about to initialize a Firebase project in this directory:
+
+  /home/user/soulseer4325_2
+
+[info] 
+=== Project Setup
+[info] 
+[info] First, let's associate this project directory with a Firebase project.
+[info] You can create multiple project aliases by running firebase use --add, 
+[info] but for now we'll just set up a default project.
+[info] 
+[debug] [2025-05-10T22:11:06.536Z] Using project from CLI flag: monospace-1
+[debug] [2025-05-10T22:11:06.537Z] No OAuth tokens found
+[debug] [2025-05-10T22:11:06.538Z] No OAuth tokens found
+[debug] [2025-05-10T22:11:06.538Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2025-05-10T22:11:06.538Z] > authorizing via signed-in user (emilynn992@gmail.com)
+[debug] [2025-05-10T22:11:06.538Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/monospace-1 [none]
+[debug] [2025-05-10T22:11:06.695Z] <<< [apiv2][status] GET https://firebase-public.firebaseio.com/cli.json 200
+[debug] [2025-05-10T22:11:06.695Z] <<< [apiv2][body] GET https://firebase-public.firebaseio.com/cli.json {"cloudBuildErrorAfter":1594252800000,"cloudBuildWarnAfter":1590019200000,"defaultNode10After":1594252800000,"minVersion":"3.0.5","node8DeploysDisabledAfter":1613390400000,"node8RuntimeDisabledAfter":1615809600000,"node8WarnAfter":1600128000000}
+[debug] [2025-05-10T22:11:06.902Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/monospace-1 403
+[debug] [2025-05-10T22:11:06.903Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/monospace-1 {"error":{"code":403,"message":"The caller does not have permission","status":"PERMISSION_DENIED"}}
+[debug] [2025-05-10T22:11:06.904Z] Request to https://firebase.googleapis.com/v1beta1/projects/monospace-1 had HTTP Error: 403, The caller does not have permission
+[debug] [2025-05-10T22:11:06.905Z] FirebaseError: Request to https://firebase.googleapis.com/v1beta1/projects/monospace-1 had HTTP Error: 403, The caller does not have permission
+    at responseToError (/home/.npm/_npx/ba4f1959e38407b5/node_modules/firebase-tools/lib/responseToError.js:52:12)
+    at RetryOperation._fn (/home/.npm/_npx/ba4f1959e38407b5/node_modules/firebase-tools/lib/apiv2.js:312:77)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+[error] 
+[error] Error: Failed to get Firebase project monospace-1. Please make sure the project exists and your account has permission to access it.

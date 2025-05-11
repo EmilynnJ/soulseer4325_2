@@ -30,6 +30,7 @@ export default function ReadingSessionPage() {
   
   // Use the WebSocket context instead of creating a direct connection
   const { status, sendMessage, lastMessage, reconnect } = useWebSocketContext();
+  const [billingActive, setBillingActive] = useState(false);
 
   // Get reading session data
   const { data: reading, isLoading } = useQuery<Reading>({
@@ -49,6 +50,15 @@ export default function ReadingSessionPage() {
     mutationFn: async () => {
       // Calculate the total cost based on elapsed time
       const finalCost = Math.ceil((reading!.pricePerMinute * elapsedTime) / 60);
+      
+      // Request final billing summary before ending
+      if (status === 'open') {
+        sendMessage({
+          type: 'request_billing_summary',
+          readingId: reading.id,
+          userId: user.id
+        });
+      }
       
       await apiRequest('POST', `/api/readings/${params?.id}/end`, {
         duration: Math.ceil(elapsedTime / 60), // Convert to minutes and round up
@@ -93,6 +103,34 @@ export default function ReadingSessionPage() {
     }
   });
   
+  // Start billing when component mounts if reading is in progress
+  useEffect(() => {
+    if (!reading || !user) return;
+    
+    if (reading.status === 'in_progress' && status === 'open') {
+      console.log("Starting billing on mount");
+      sendMessage({
+        type: 'start_billing',
+        readingId: reading.id,
+        userId: user.id
+      });
+      setBillingActive(true);
+    }
+    
+    return () => {
+      // Pause billing when component unmounts
+      if (billingActive) {
+        console.log("Pausing billing on unmount");
+        sendMessage({
+          type: 'pause_billing',
+          readingId: reading.id,
+          userId: user.id,
+          reason: 'component_unmount'
+        });
+      }
+    };
+  }, [reading, user, status, sendMessage]);
+  
   // Start the timer for chat and voice sessions
   useEffect(() => {
     if (!reading || !user || reading.type === 'video') return;
@@ -102,6 +140,19 @@ export default function ReadingSessionPage() {
       // Start the timer for chat and voice sessions
       setSessionStarted(true);
       
+      // Start billing when session starts
+      if (status === 'open' && !billingActive) {
+        console.log("Starting billing on session start");
+        sendMessage({
+          type: 'start_billing',
+          readingId: reading.id,
+          userId: user.id
+        });
+        setBillingActive(true);
+      }
+      
+      // We'll use billing_tick events instead of a local timer
+      // but keep a fallback timer in case websocket fails
       timerRef.current = setInterval(() => {
         setElapsedTime(prev => {
           const newSeconds = prev + 1;
@@ -115,9 +166,9 @@ export default function ReadingSessionPage() {
         clearInterval(timerRef.current);
       }
     };
-  }, [reading, user, sessionStarted]);
+  }, [reading, user, sessionStarted, status, sendMessage, billingActive]);
   
-  // Listen for WebSocket messages for the chat
+  // Listen for WebSocket messages for the chat and handle connection status
   useEffect(() => {
     if (!reading || !user) return;
     
@@ -145,6 +196,18 @@ export default function ReadingSessionPage() {
         type: 'subscribe',
         channel: `reading_${reading.id}`
       });
+      
+      // Restart billing if it was active before
+      if (sessionStarted && !billingActive) {
+        console.log("Restarting billing after reconnection");
+        sendMessage({
+          type: 'start_billing',
+          readingId: reading.id,
+          userId: user.id,
+          resuming: true
+        });
+        setBillingActive(true);
+      }
     } else if (status === 'closed' || status === 'error') {
       setChatMessages(prev => {
         // Only add the system message if it doesn't already exist
@@ -163,10 +226,17 @@ export default function ReadingSessionPage() {
         return prev;
       });
       
+      // Pause billing on disconnect
+      if (billingActive) {
+        console.log("Pausing billing due to disconnect");
+        setBillingActive(false);
+        // We'll send pause_billing when reconnected
+      }
+      
       // Try to reconnect
       reconnect();
     }
-  }, [reading, user, status, sendMessage, reconnect]);
+  }, [reading, user, status, sendMessage, reconnect, sessionStarted, billingActive]);
   
   // Process messages from WebSocket
   useEffect(() => {
@@ -188,6 +258,58 @@ export default function ReadingSessionPage() {
       // Handle subscription success
       if (lastMessage.type === 'subscription_success') {
         console.log(`Successfully subscribed to ${lastMessage.channel}`);
+        return;
+      }
+      
+      // Handle billing tick events
+      if (lastMessage.type === 'billing_tick' && lastMessage.readingId === reading.id) {
+        console.log("Received billing tick:", lastMessage);
+        setElapsedTime(lastMessage.elapsedSeconds);
+        setTotalCost(lastMessage.currentCost);
+        return;
+      }
+      
+      // Handle low balance warning
+      if (lastMessage.type === 'low_balance' && lastMessage.readingId === reading.id) {
+        console.log("Received low balance warning:", lastMessage);
+        toast({
+          title: 'Low Balance Warning',
+          description: `Your balance is running low. The session will end soon if funds are not added.`,
+          variant: 'destructive',
+        });
+        
+        // Pause billing if critically low
+        if (lastMessage.criticallyLow && billingActive) {
+          sendMessage({
+            type: 'pause_billing',
+            readingId: reading.id,
+            userId: user.id,
+            reason: 'critically_low_balance'
+          });
+          setBillingActive(false);
+        }
+        return;
+      }
+      
+      // Handle billing paused notification
+      if (lastMessage.type === 'billing_paused' && lastMessage.readingId === reading.id) {
+        console.log("Billing has been paused:", lastMessage);
+        setBillingActive(false);
+        toast({
+          title: 'Billing Paused',
+          description: `Billing has been paused: ${lastMessage.reason}`,
+        });
+        return;
+      }
+      
+      // Handle billing resumed notification
+      if (lastMessage.type === 'billing_resumed' && lastMessage.readingId === reading.id) {
+        console.log("Billing has been resumed:", lastMessage);
+        setBillingActive(true);
+        toast({
+          title: 'Billing Resumed',
+          description: 'Your session billing has been resumed.',
+        });
         return;
       }
       
@@ -218,7 +340,7 @@ export default function ReadingSessionPage() {
     } catch (error) {
       console.error("Error processing WebSocket message:", error);
     }
-  }, [lastMessage, reading, user, chatMessages, sessionStarted]);
+  }, [lastMessage, reading, user, chatMessages, sessionStarted, billingActive, toast, sendMessage]);
   
   // Update total cost whenever elapsed time changes
   useEffect(() => {
@@ -240,6 +362,19 @@ export default function ReadingSessionPage() {
   
   // Handle ending the reading session
   const handleEndReading = () => {
+    // Pause billing first
+    if (billingActive && status === 'open') {
+      sendMessage({
+        type: 'pause_billing',
+        readingId: reading.id,
+        userId: user.id,
+        reason: 'session_ended_by_user',
+        final: true
+      });
+      setBillingActive(false);
+    }
+    
+    // Then end the reading
     endReadingMutation.mutate();
   };
   

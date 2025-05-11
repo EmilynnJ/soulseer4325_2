@@ -3,6 +3,8 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { initializeDatabase } from "./migrations/migration-manager";
 import { config } from "dotenv";
+import { Server as SocketIOServer } from "socket.io";
+import { initializeSignalingService } from "./services/signaling";
 
 // Load environment variables
 config();
@@ -62,6 +64,99 @@ app.use((req, res, next) => {
   }
   
   const server = await registerRoutes(app);
+  
+  // Initialize Socket.io for WebRTC signaling
+  const io = initializeSignalingService(server);
+  
+  // Set up reading-specific signaling namespace
+  const readingNamespace = io.of('/signal/reading/:readingId');
+  
+  readingNamespace.on('connection', (socket) => {
+    const readingId = socket.handshake.query.readingId as string;
+    log(`New connection to reading ${readingId} namespace`, 'signaling');
+    
+    // Join the reading room
+    socket.join(`reading-${readingId}`);
+    
+    // Handle join event
+    socket.on('join', (data) => {
+      const { userId, role } = data;
+      log(`User ${userId} (${role}) joined reading ${readingId}`, 'signaling');
+      
+      // Notify others in the room
+      socket.to(`reading-${readingId}`).emit('user_joined', {
+        userId,
+        role
+      });
+      
+      // Store user data in socket
+      socket.data.userId = userId;
+      socket.data.role = role;
+      socket.data.readingId = readingId;
+    });
+    
+    // Handle WebRTC signaling events
+    socket.on('offer', (data) => {
+      socket.to(`reading-${readingId}`).emit('offer', {
+        ...data,
+        senderId: socket.data.userId
+      });
+    });
+    
+    socket.on('answer', (data) => {
+      socket.to(`reading-${readingId}`).emit('answer', {
+        ...data,
+        senderId: socket.data.userId
+      });
+    });
+    
+    socket.on('ice-candidate', (data) => {
+      socket.to(`reading-${readingId}`).emit('ice-candidate', {
+        ...data,
+        senderId: socket.data.userId
+      });
+    });
+    
+    // Handle billing ticks
+    socket.on('billing-tick', (data) => {
+      const { elapsedMinutes, currentAmount } = data;
+      
+      // Emit to all clients in the room
+      io.to(`reading-${readingId}`).emit('billing-update', {
+        elapsedMinutes,
+        currentAmount,
+        timestamp: new Date().toISOString()
+      });
+      
+      log(`Billing tick: ${elapsedMinutes} minutes, $${currentAmount/100} for reading ${readingId}`, 'billing');
+    });
+    
+    // Handle end call event
+    socket.on('end', (data) => {
+      const { reason } = data;
+      
+      // Emit to all clients in the room
+      io.to(`reading-${readingId}`).emit('call-ended', {
+        userId: socket.data.userId,
+        role: socket.data.role,
+        reason,
+        timestamp: new Date().toISOString()
+      });
+      
+      log(`Call ended by ${socket.data.userId} in reading ${readingId}`, 'signaling');
+    });
+    
+    // Handle disconnection
+    socket.on('disconnect', () => {
+      log(`User ${socket.data.userId} disconnected from reading ${readingId}`, 'signaling');
+      
+      // Notify others in the room
+      socket.to(`reading-${readingId}`).emit('user_left', {
+        userId: socket.data.userId,
+        role: socket.data.role
+      });
+    });
+  });
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
@@ -71,6 +166,20 @@ app.use((req, res, next) => {
     res.status(status).json({ message });
     // Don't rethrow the error, as it can crash the application
   });
+  
+  // Set up a heartbeat interval for active reading sessions
+  setInterval(() => {
+    const rooms = io.of('/signal/reading').adapter.rooms;
+    for (const [roomName, room] of rooms.entries()) {
+      if (roomName.startsWith('reading-')) {
+        const readingId = roomName.replace('reading-', '');
+        io.to(roomName).emit('heartbeat', {
+          timestamp: new Date().toISOString(),
+          readingId
+        });
+      }
+    }
+  }, 30000); // Send heartbeat every 30 seconds
 
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route

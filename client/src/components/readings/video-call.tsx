@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useSignaling } from '@/hooks/use-signaling';
 import { Button } from '@/components/ui/button';
 import { Video, VideoOff, Mic, MicOff, Phone } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -31,10 +32,10 @@ export function VideoCall({
   
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  const socketRef = useRef<WebSocket | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   
   const { toast } = useToast();
+  const { socket, connected, emit, on, off } = useSignaling(reading.id, user.id, isReader ? 'reader' : 'client');
   
   // Initialize media streams and WebRTC
   useEffect(() => {
@@ -79,9 +80,8 @@ export function VideoCall({
         // Ice candidate handling
         pc.onicecandidate = (event) => {
           if (event.candidate) {
-            // Send ICE candidate to the other peer via WebSocket
-            sendSignalingMessage({
-              type: 'ice_candidate',
+            // Send ICE candidate to the other peer via Socket.io
+            emit('ice_candidate', {
               candidate: event.candidate,
               readingId: reading.id,
               senderId: user.id,
@@ -92,68 +92,37 @@ export function VideoCall({
         
         setPeerConnection(pc);
         
-        // Establish WebSocket connection to our signaling server
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/ws`;
-        const socket = new WebSocket(wsUrl);
+        console.log('Setting up Socket.io signaling for video call');
         
-        socket.onopen = () => {
-          console.log('WebSocket connection established for video call');
-          // Send a join message to register this peer in the reading session
-          sendSignalingMessage({
-            type: 'join_reading',
-            readingId: reading.id,
-            userId: user.id,
-            role: isReader ? 'reader' : 'client'
-          });
-        };
-        
-        socket.onmessage = async (event) => {
-          const message = JSON.parse(event.data);
-          
-          // Only process messages for this reading
-          if (message.readingId !== reading.id) return;
-          
-          // Handle different signaling message types
-          switch (message.type) {
-            case 'offer':
-              await handleOffer(message, pc);
-              break;
-            case 'answer':
-              await handleAnswer(message, pc);
-              break;
-            case 'ice_candidate':
-              handleIceCandidate(message, pc);
-              break;
-            case 'reading_joined':
-              // Another user joined, initiate connection if we're the reader
-              if (isReader && message.userId !== user.id) {
-                initiateCall(pc, reading.id, user.id, message.userId);
-              }
-              break;
-            case 'call_connected':
-              // Start the timer once the call is connected
-              startTimer();
-              setIsConnected(true);
-              setIsLoading(false);
-              toast({
-                title: 'Call Connected',
-                description: 'Your video call is now active',
-              });
-              break;
+        // Set up Socket.io event listeners
+        on('offer', (message) => handleOffer(message, pc));
+        on('answer', (message) => handleAnswer(message, pc));
+        on('ice_candidate', (message) => handleIceCandidate(message, pc));
+        on('join', (message) => {
+          // Another user joined, initiate connection if we're the reader
+          if (isReader && message.userId !== user.id) {
+            initiateCall(pc, reading.id, user.id, message.userId);
           }
-        };
-        
-        socket.onerror = (error) => {
-          console.error('WebSocket error:', error);
+        });
+        on('call_connected', () => {
+          // Start the timer once the call is connected
+          startTimer();
+          setIsConnected(true);
+          setIsLoading(false);
           toast({
-            title: 'Connection Error',
-            description: 'Failed to establish signaling connection',
-            variant: 'destructive',
+            title: 'Call Connected',
+            description: 'Your video call is now active',
           });
-        };
-        
-        socketRef.current = socket;
+        });
+        on('call_ended', () => {
+          // The other peer ended the call
+          onEndCall();
+        });
+        on('billing_tick', (data) => {
+          // Handle billing tick event
+          console.log('Billing tick:', data);
+          // You might want to show remaining balance or other billing info
+        });
       } catch (error) {
         console.error('Error accessing media devices:', error);
         toast({
@@ -179,10 +148,14 @@ export function VideoCall({
         peerConnection.close();
       }
       
-      // Close WebSocket connection
-      if (socketRef.current) {
-        socketRef.current.close();
-      }
+      // Remove Socket.io listeners
+      off('offer');
+      off('answer');
+      off('ice_candidate');
+      off('join');
+      off('call_connected');
+      off('call_ended');
+      off('billing_tick');
       
       // Clear timer
       if (timerRef.current) {
@@ -191,12 +164,6 @@ export function VideoCall({
     };
   }, [reading.id, user.id, isReader]);
   
-  // Helper function to send signaling messages via WebSocket
-  const sendSignalingMessage = (message: any) => {
-    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify(message));
-    }
-  };
   
   // Start the session timer
   const startTimer = () => {
@@ -226,8 +193,7 @@ export function VideoCall({
       await pc.setLocalDescription(offer);
       
       // Send the offer to the other peer
-      sendSignalingMessage({
-        type: 'offer',
+      emit('offer', {
         sdp: pc.localDescription,
         readingId,
         senderId,
@@ -253,8 +219,7 @@ export function VideoCall({
       await pc.setLocalDescription(answer);
       
       // Send answer back
-      sendSignalingMessage({
-        type: 'answer',
+      emit('answer', {
         sdp: pc.localDescription,
         readingId: message.readingId,
         senderId: user.id,
@@ -271,8 +236,7 @@ export function VideoCall({
       await pc.setRemoteDescription(new RTCSessionDescription(message.sdp));
       
       // Notify both parties that the call is connected
-      sendSignalingMessage({
-        type: 'call_connected',
+      emit('call_connected', {
         readingId: message.readingId,
         senderId: user.id,
         recipientId: message.senderId
@@ -322,8 +286,7 @@ export function VideoCall({
     }
     
     // Notify the other peer that we're ending the call
-    sendSignalingMessage({
-      type: 'call_ended',
+    emit('call_ended', {
       readingId: reading.id,
       senderId: user.id,
       recipientId: isReader ? reading.clientId : reading.readerId
