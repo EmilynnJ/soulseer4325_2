@@ -18,6 +18,11 @@ server/public
 .env.test.local
 .env.production.local
 
+# Local environment overrides
+.env
+.env.local
+.env.*.local
+
 # Logs
 npm-debug.log*
 yarn-debug.log*

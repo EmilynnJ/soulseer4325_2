@@ -61,12 +61,16 @@ const databaseURL = process.env.FIREBASE_DATABASE_URL ||
 // Initialize the Firebase Admin SDK
 admin.initializeApp({
   credential,
-  databaseURL
+  databaseURL,
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET
 });
 
 // Export the admin instance and commonly used services
 export { admin };
 export const auth = admin.auth();
 export const db = admin.database();
+export const firestore = admin.firestore();
+export const storageService = admin.storage();
+export const messagingService = admin.messaging();
 
 console.log('Firebase Admin SDK initialized successfully');

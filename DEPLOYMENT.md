@@ -2,6 +2,58 @@
 
 This document outlines the steps to deploy the SoulSeer application to Railway, as well as alternative deployment options.
 
+## Environment Variables
+
+SoulSeer uses environment variables for configuration across both client and server components. These variables control database connections, API keys, feature flags, and other application settings.
+
+### Setup Instructions
+
+1. Copy the example environment file to create your local environment configuration:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Edit the `.env` file and fill in the appropriate values for your environment (development, staging, or production).
+
+3. For deployment, ensure these variables are set in your hosting platform (Railway, Vercel, etc.).
+
+### Key Environment Variables
+
+| Variable | Description | Used In | Example Value |
+|----------|-------------|---------|--------------|
+| `DATABASE_URL` | PostgreSQL connection string | Server | `postgresql://user:pass@localhost:5432/soulseer` |
+| `PORT` | Server port (defaults to 5000) | Server | `5000` |
+| `NODE_ENV` | Environment mode | Both | `development` or `production` |
+| `SESSION_SECRET` | Secret for session encryption | Server | `random-secure-string` |
+| `STRIPE_SECRET_KEY` | Stripe API secret key | Server | `sk_test_...` |
+| `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret | Server | `whsec_...` |
+| `VITE_STRIPE_PUBLIC_KEY` | Stripe publishable key | Client | `pk_test_...` |
+| `MUX_TOKEN_ID` | MUX API token ID | Server | `your-mux-token-id` |
+| `MUX_TOKEN_SECRET` | MUX API token secret | Server | `your-mux-token-secret` |
+| `MUX_WEBHOOK_SECRET` | MUX webhook signing secret | Server | `your-mux-webhook-secret` |
+| `VITE_API_URL` | Backend API URL | Client | `http://localhost:5000/api` or production URL |
+| `VITE_WEBSOCKET_URL` | WebSocket server URL | Client | `ws://localhost:5000` or production URL |
+| `VITE_ENABLE_WEBSOCKET` | Enable WebSocket features | Client | `true` or `false` |
+| `VITE_ENABLE_LIVESTREAMS` | Enable livestream features | Client | `true` or `false` |
+| `VITE_ENABLE_CHECKOUT` | Enable payment checkout | Client | `true` or `false` |
+| `VITE_ENABLE_PWA` | Enable Progressive Web App features | Client | `true` or `false` |
+| `VITE_ENABLE_NOTIFICATIONS` | Enable push notifications | Client | `true` or `false` |
+| `VITE_APP_VERSION` | Application version | Both | `1.0.0` |
+| `VITE_APP_DOMAIN` | Application domain | Client | `soulseer.app` |
+| `VITE_APP_STORE_ID` | iOS App Store ID | Client | `your-app-store-id` |
+| `VITE_PLAY_STORE_ID` | Google Play Store ID | Client | `your-play-store-id` |
+
+### How Environment Variables Are Loaded
+
+- **Server-side**: Variables are loaded using `dotenv` in `server/index.ts` and accessed via `process.env.VARIABLE_NAME`
+- **Client-side**: Variables are loaded by Vite (must be prefixed with `VITE_`) and accessed via the helper functions in `client/src/lib/env.ts`
+
+### Notes
+
+- Never commit `.env` files containing real secrets to version control
+- Only variables prefixed with `VITE_` are exposed to the client-side code
+- For local development, use `.env.local` for overrides specific to your machine
+
 ## Railway Deployment (Preferred Method)
 
 ### Prerequisites
@@ -12,19 +64,15 @@ This document outlines the steps to deploy the SoulSeer application to Railway, 
 4. Stripe API keys (for payment processing)
 5. MUX API keys (for video streaming)
 
-### Environment Variables
+### Railway Environment Variables
 
-The following environment variables need to be set in your Railway project:
+When deploying to Railway, you'll need to set the environment variables in your Railway project. You can do this through the Railway dashboard or using the CLI:
 
+```bash
+railway variables set DATABASE_URL=your_postgres_database_url STRIPE_SECRET_KEY=your_stripe_secret_key ...
 ```
-DATABASE_URL=your_postgres_database_url
-STRIPE_SECRET_KEY=your_stripe_secret_key
-STRIPE_WEBHOOK_SECRET=your_stripe_webhook_secret
-MUX_TOKEN_ID=your_mux_token_id
-MUX_TOKEN_SECRET=your_mux_token_secret
-MUX_WEBHOOK_SECRET=your_mux_webhook_secret
-SESSION_SECRET=a_random_secret_for_session_encryption
-```
+
+Make sure to set all the variables listed in the [Environment Variables](#environment-variables) section above.
 
 ### Deployment Steps
 

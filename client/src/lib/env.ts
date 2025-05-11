@@ -34,7 +34,6 @@ export const env = {
   
   // External services
   STRIPE_PUBLIC_KEY: getEnvVar('VITE_STRIPE_PUBLIC_KEY', ''),
-  MUX_ENV_KEY: getEnvVar('VITE_MUX_ENV_KEY', ''),
   
   // PWA configuration
   ENABLE_PWA: getBoolEnvVar('VITE_ENABLE_PWA', true),
