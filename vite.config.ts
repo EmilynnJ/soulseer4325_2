@@ -28,6 +28,18 @@ export default defineConfig({
       "@shared": path.resolve(__dirname, "shared"),
     },
   },
+  optimizeDeps: {
+    include: [
+      'firebase/app',
+      'firebase/auth',
+      'firebase/database',
+      'firebase/analytics',
+      'firebase/firestore',
+      'firebase/storage',
+      'firebase/messaging',
+      'firebase/functions'
+    ]
+  },
   root: path.resolve(__dirname, "client"),
   build: {
     outDir: path.resolve(__dirname, "dist/public"),
