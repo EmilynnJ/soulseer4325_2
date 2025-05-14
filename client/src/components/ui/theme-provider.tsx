@@ -1,20 +1,21 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import themeData from '../../theme.json';
 
-type Theme = "dark" | "light" | "system";
+type Theme = 'light' | 'dark' | 'system';
 
-type ThemeProviderProps = {
-  children: ReactNode;
+interface ThemeProviderProps {
+  children: React.ReactNode;
   defaultTheme?: Theme;
   storageKey?: string;
-};
+}
 
-type ThemeProviderState = {
+interface ThemeProviderState {
   theme: Theme;
   setTheme: (theme: Theme) => void;
-};
+}
 
 const initialState: ThemeProviderState = {
-  theme: "dark",
+  theme: 'system',
   setTheme: () => null,
 };
 
@@ -22,8 +23,8 @@ const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
 
 export function ThemeProvider({
   children,
-  defaultTheme = "dark", // We will default to dark for the celestial theme
-  storageKey = "soulseer-ui-theme",
+  defaultTheme = 'system',
+  storageKey = 'ui-theme',
   ...props
 }: ThemeProviderProps) {
   const [theme, setTheme] = useState<Theme>(
@@ -33,16 +34,38 @@ export function ThemeProvider({
   useEffect(() => {
     const root = window.document.documentElement;
     
-    // Always stick to dark theme for this design
-    root.classList.remove("light");
-    root.classList.add("dark");
+    root.classList.remove('light', 'dark');
+    
+    if (theme === 'system') {
+      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
+        .matches
+        ? 'dark'
+        : 'light';
+      
+      root.classList.add(systemTheme);
+      
+      // Apply CSS variables
+      const cssVars = themeData.cssVars[systemTheme];
+      Object.entries(cssVars).forEach(([key, value]) => {
+        root.style.setProperty(`--${key}`, value as string);
+      });
+      
+      return;
+    }
 
-    localStorage.setItem(storageKey, theme);
-  }, [theme, storageKey]);
+    root.classList.add(theme);
+    
+    // Apply CSS variables
+    const cssVars = themeData.cssVars[theme];
+    Object.entries(cssVars).forEach(([key, value]) => {
+      root.style.setProperty(`--${key}`, value as string);
+    });
+  }, [theme]);
 
   const value = {
     theme,
     setTheme: (theme: Theme) => {
+      localStorage.setItem(storageKey, theme);
       setTheme(theme);
     },
   };
@@ -58,7 +81,7 @@ export const useTheme = () => {
   const context = useContext(ThemeProviderContext);
 
   if (context === undefined)
-    throw new Error("useTheme must be used within a ThemeProvider");
+    throw new Error('useTheme must be used within a ThemeProvider');
 
   return context;
 };
