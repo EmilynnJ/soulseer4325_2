@@ -18,3 +18,9 @@ services:
         sync: false
       - key: FIREBASE_SERVICE_ACCOUNT_KEY
         sync: false
+      - key: FIREBASE_DATABASE_URL
+        value: https://soulseer-create-default-rtdb.firebaseio.com
+      - key: FIREBASE_PROJECT_ID
+        value: soulseer-create
+      - key: FIREBASE_STORAGE_BUCKET
+        value: soulseer-create.firebasestorage.app
