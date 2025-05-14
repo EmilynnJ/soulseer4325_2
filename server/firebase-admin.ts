@@ -12,27 +12,35 @@ import * as path from 'path';
 // Initialize credential object
 let credential: admin.credential.Credential;
 
-// Check if FIREBASE_SERVICE_ACCOUNT is provided as an environment variable
-if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+// Check if FIREBASE_SERVICE_ACCOUNT_KEY is provided as an environment variable
+if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
   try {
     // If the env var contains JSON content directly
+    const serviceAccountJson = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+    credential = admin.credential.cert(serviceAccountJson);
+  } catch (error) {
+    // If the env var is a base64 encoded string or a token
+    console.log('FIREBASE_SERVICE_ACCOUNT_KEY is not valid JSON, trying as service account token...');
+    try {
+      // For Render deployment, we're using a service account token
+      credential = admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: `firebase-adminsdk@${process.env.FIREBASE_PROJECT_ID}.iam.gserviceaccount.com`,
+        privateKey: process.env.FIREBASE_SERVICE_ACCOUNT_KEY.replace(/\\n/g, '\n')
+      });
+    } catch (tokenError) {
+      console.error('Failed to load Firebase service account from token:', tokenError);
+      throw new Error('Invalid FIREBASE_SERVICE_ACCOUNT_KEY environment variable');
+    }
+  }
+} else if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  try {
+    // Legacy support for FIREBASE_SERVICE_ACCOUNT
     const serviceAccountJson = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
     credential = admin.credential.cert(serviceAccountJson);
   } catch (error) {
-    // If the env var is a path to a JSON file
-    console.log('FIREBASE_SERVICE_ACCOUNT is not valid JSON, trying as file path...');
-    try {
-      const serviceAccountPath = path.resolve(process.env.FIREBASE_SERVICE_ACCOUNT);
-      if (fs.existsSync(serviceAccountPath)) {
-        const serviceAccountJson = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
-        credential = admin.credential.cert(serviceAccountJson);
-      } else {
-        throw new Error(`Service account file not found at: ${serviceAccountPath}`);
-      }
-    } catch (fileError) {
-      console.error('Failed to load Firebase service account:', fileError);
-      throw new Error('Invalid FIREBASE_SERVICE_ACCOUNT environment variable');
-    }
+    console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT:', error);
+    throw new Error('Invalid FIREBASE_SERVICE_ACCOUNT environment variable');
   }
 } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
   // Use Google Application Default Credentials if available
@@ -50,13 +58,13 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
       throw new Error('Invalid service account file');
     }
   } else {
-    throw new Error('Firebase credentials not found. Please set FIREBASE_SERVICE_ACCOUNT environment variable or provide a service account JSON file.');
+    throw new Error('Firebase credentials not found. Please set FIREBASE_SERVICE_ACCOUNT_KEY environment variable or provide a service account JSON file.');
   }
 }
 
-// Get database URL from environment or construct from project ID
+// Get database URL from environment
 const databaseURL = process.env.FIREBASE_DATABASE_URL || 
-  `https://${process.env.FIREBASE_PROJECT_ID || (credential as any).projectId}.firebaseio.com`;
+  `https://${process.env.FIREBASE_PROJECT_ID}.firebaseio.com`;
 
 // Initialize the Firebase Admin SDK
 admin.initializeApp({

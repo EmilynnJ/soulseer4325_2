@@ -7,26 +7,42 @@ node_modules
 dist
 server/public
 /build
+.next
+out
 
 # Testing
 /coverage
 
 # Environment variables
 .env
+.env.*
 .env.local
+.env.development
 .env.development.local
 .env.test.local
+.env.production
 .env.production.local
+.env.render
 
 # Local environment overrides
-.env
 .env.local
 .env.*.local
+
+# Credentials and secrets
+*credentials*.json
+*service-account*.json
+*serviceAccount*.json
+*key*.json
+.firebase/*.cache
+cookies.txt
 
 # Logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+*.log
+dataconnect-debug.log
+firebase-debug.log
 
 # Editor specific
 .DS_Store
@@ -43,3 +59,17 @@ vite.config.ts.*
 
 # Misc
 *.tar.gz
+firebase-service-account.json
+.firebaserc
+.cache
+.temp
+.tmp
+*.bak
+*.backup
+*.swp
+*.pid
+*.seed
+*.pid.lock
+.eslintcache
+.vercel
+.netlify
