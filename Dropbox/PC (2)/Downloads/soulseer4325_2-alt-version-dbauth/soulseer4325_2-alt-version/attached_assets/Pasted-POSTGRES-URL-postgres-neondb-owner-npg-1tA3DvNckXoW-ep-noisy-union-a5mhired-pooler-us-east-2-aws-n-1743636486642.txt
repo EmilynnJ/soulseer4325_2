@@ -1,0 +1,111 @@
+POSTGRES_URL=postgres://neondb_owner:npg_1tA3DvNckXoW@ep-noisy-union-a5mhired-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require
+POSTGRES_URL_NON_POOLING=postgres://neondb_owner:npg_1tA3DvNckXoW@ep-noisy-union-a5mhired.us-east-2.aws.neon.tech/neondb?sslmode=require
+POSTGRES_USER=neondb_owner
+POSTGRES_HOST=ep-noisy-union-a5mhired-pooler.us-east-2.aws.neon.tech
+POSTGRES_PASSWORD=npg_1tA3DvNckXoW
+POSTGRES_DATABASE=neondb
+POSTGRES_URL_NO_SSL=postgres://neondb_owner:npg_1tA3DvNckXoW@ep-noisy-union-a5mhired-pooler.us-east-2.aws.neon.tech/neondb
+POSTGRES_PRISMA_URL=postgres://neondb_owner:npg_1tA3DvNckXoW@ep-noisy-union-a5mhired-pooler.us-east-2.aws.neon.tech/neondb?connect_timeout=15&sslmode=require
+Projects
+Settings
+Getting Started
+Usage
+RESOURCES
+
+Integration Guide
+Preview Deployment Guide
+Neon Docs
+Framework Quickstarts
+Serverless Driver
+Neon CLI
+Usage Metrics
+Vercel Postgres Transition Guide
+Support
+1
+
+Connect to a project
+
+In this guide, you will learn how to create a simple web application using Next.js Server Actions that captures user input via forms and inserts it into Postgres using the @neondatabase/serverless driver.
+
+Start by connecting to a project. If you don't already have a project to connect to, you can create one. See Automatic Installation in the Next.js documentation for instructions. Please note that the following example uses App Router, so be sure use that option if creating a new Next.js project.
+
+2
+
+Pull your latest environment variables
+
+Run vercel env pull .env.development.local to make the latest environment variables available to your project locally.
+
+3
+
+Install the Neon serverless driver
+
+Run npm install @neondatabase/serverless to install the Neon serverless driver for connecting to your Neon database.
+
+For more about our driver, see Neon serverless driver.
+
+4
+
+Create the database table
+
+Navigate to the Neon SQL Editor in the Neon Console and create the application database by running this SQL command:
+
+
+CREATE TABLE IF NOT EXISTS comments (comment TEXT);
+You can access the Neon Console from the Storage tab on your Vercel Dashboard. Select Open in Neon Console.
+
+5
+
+Create a form with a Server Action
+
+Create a form that allows users to input a comment with a Server Action action named create that inserts data into your Postgres database.
+
+
+// File: app/page.tsx
+import { neon } from '@neondatabase/serverless';
+
+export default function Page() {
+  async function create(formData: FormData) {
+    'use server';
+    // Connect to the Neon database
+    const sql = neon(`${process.env.DATABASE_URL}`);
+    const comment = formData.get('comment');
+    // Insert the comment from the form into the Postgres database
+    await sql('INSERT INTO comments (comment) VALUES ($1)', [comment]);
+  }
+
+  return (
+    <form action={create}>
+      <input type="text" placeholder="write a comment" name="comment" />
+      <button type="submit">Submit</button>
+    </form>
+  );
+}
+6
+
+Run the app
+
+Execute the following command to run your application locally:
+
+
+npm run dev
+Navigate to http://localhost:3000 to see the comment form. Try inserting a comment. You can query your database directly from the Neon SQL Editor to validate that your application works:
+
+
+SELECT * FROM comments;
+Home
+Docs
+Guides
+Help
+Contact
+All systems normal
+
+Select a display theme:
+
+system
+
+light
+
+dark
+© 2025, Vercel Inc.
+
+

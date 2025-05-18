@@ -1,0 +1,195 @@
+
+
+
+---
+
+SECTION 1: Project Foundation, Theme, and Layout
+
+> Prompt:
+
+
+
+Create a full-stack web app for SoulSeer — a spiritual, mystical, and celestial-themed psychic reading platform. Use Vite + React for the frontend and a backend stack compatible with Vercel’s architecture. Implement the following foundational items:
+
+1. Global theme and appearance using a celestial style — color palette includes black, soft pinks, gold accents, and white highlights. Include glow and sparkle effects throughout.
+2. Set up role-based login and JWT authentication (reader, client, admin).
+3. Set up initial routing using React Router. Each route must be fully connected with a matching page:
+   - `/` (Home)
+   - `/about`
+   - `/readers`
+   - `/live`
+   - `/shop`
+   - `/community`
+   - `/messages`
+   - `/dashboard` (dynamically load reader, client, or admin dashboard based on role)
+   - `/help`
+   - `/policies`
+   - `/register`
+   - `/login`
+   - `/logout`
+   - `/apply`
+
+Add a persistent top navigation bar with logo placeholder, and footer. Pages should use reusable layout components styled to match the SoulSeer theme.
+
+
+---
+
+SECTION 2: Auth, User Roles, and Onboarding Pages
+
+> Prompt:
+
+
+
+Build out the authentication system with user role management:
+
+1. Implement secure signup and login pages using JWT. Store user sessions in localStorage.
+2. Signup form must capture:
+   - Full name
+   - Email
+   - Password
+   - Role (client or reader)
+3. Automatically assign new users to the selected role.
+4. Build an `/apply` page for potential readers with:
+   - Full name
+   - Bio
+   - Photo upload
+   - Schedule availability input
+   - Psychic specialties (checkbox or tags)
+   - Submit button
+
+Connect all forms to the backend and store user data in MongoDB. Redirect to dashboards after login based on role.
+
+SECTION 3: Reader, Client, and Admin Dashboards
+Prompt:
+Create dynamic dashboards at `/dashboard`, with layouts based on the authenticated user’s role.
+
+1. **Reader Dashboard**  
+   - Editable profile: bio, profile picture, specialties, and session rates (per-minute for chat, phone, video)  
+   - Availability scheduler for live/on-demand and scheduled sessions  
+   - View earnings and session history  
+   - Toggle for choosing free or paid replies to client messages  
+   - Connect to Square for payouts (use Square OAuth and API for linked accounts)  
+
+2. **Client Dashboard**  
+   - View and top-up account balance via Square Checkout  
+   - Favorite readers list  
+   - Session history (on-demand and scheduled)  
+   - Booking system for scheduled sessions  
+   - Launch pay-per-minute chat, call, or video sessions if a reader is available  
+
+3. **Admin Dashboard**  
+   - Manage users (view/edit/suspend reader and client accounts)  
+   - Review reader applications  
+   - Monitor platform activity: sessions, revenue, flagged content  
+   - Admin-only ability to override reader rates or payout issues  
+
+All dashboards must be styled to match the SoulSeer mystical and ethereal theme, with glowing cards, celestial UI, and smooth transitions.
+
+
+SECTION 4: Messaging vs. Pay-Per-Minute Chat (Clear Distinction)
+Prompt:
+Implement two separate systems:
+
+1. **Messages** (Free + Optional Paid Reply)  
+   - Located at `/messages`  
+   - Clients can always send messages to readers for free  
+   - Readers can choose whether their reply is free or paid, per message  
+   - If paid, the system deducts the message fee from client balance and logs it in reader earnings  
+   - Include message history, timestamps, and visual markers for paid replies  
+
+2. **Pay-Per-Minute Chat / Phone / Video System (RTC)**  
+   - On-demand system where clients connect live with readers  
+   - Reader sets a per-minute rate  
+   - Client must have sufficient balance to begin  
+   - Timer starts once session begins; deduct balance per minute  
+   - Reader earns 70% of each minute charged  
+   - End session automatically when balance runs out  
+   - Include session logs in both dashboards  
+
+Use a free-tier RTC provider with chat, voice, and video SDK. Tie billing logic directly into Square APIs for all payments, session tracking, and payouts.
+
+
+SECTION 5: Scheduling System (Standalone, One-Time Payments)
+Prompt:
+Create a separate **scheduled reading system** from the on-demand system:
+
+1. Readers set monthly availability on a calendar (time slot picker)  
+2. Clients browse readers, choose a time, select session type (chat, phone, video)  
+3. Clients pay a one-time flat fee via Square Checkout when booking  
+4. Scheduled sessions show up in both dashboards  
+5. On the scheduled date/time, allow the client and reader to start a session from their dashboard  
+6. Reader earnings logged after the session completes  
+7. Session duration and type are logged  
+
+Use Square for all booking payments and payout management. Avoid mixing this with the on-demand (pay-per-minute) system.
+
+
+SECTION 6: SoulSeer Shop (Square Checkout Only)
+Prompt:
+Build the SoulSeer shop system:
+
+1. `/shop` page displaying spiritual/metaphysical items  
+   - Product image, name, price, description  
+   - Add to cart functionality  
+
+2. Cart + Square Checkout integration (no Stripe)  
+3. Admin dashboard: add/edit/delete products  
+4. Clients see purchase history in their dashboard  
+
+Style the entire shop with SoulSeer’s celestial design — floating product cards, sparkles, and gold accents.
+
+
+SECTION 7: Community Forum (Threaded + Highlights)
+Prompt:
+Create a rich `/community` forum page with:
+
+1. Threaded discussion system (forums with nested replies)  
+   - Users can create new threads or reply to existing ones  
+   - Readers and clients can both post  
+   - Show thread title, description, tags, author info  
+
+2. Top of the page must feature two glowing cards:
+   - **Join Our Discord**: link to SoulSeer’s Discord server
+   - **Support Us on Patreon**: link to SoulSeer’s Patreon page  
+
+3. Add categories for intuitive browsing (e.g., Psychic Talk, Spiritual Healing, Events)
+
+Use soft pinks, black, white, gold sparkles, and celestial background graphics. Highlight popular threads visually.
+
+
+SECTION 8: Livestream + Gifting with Square Integration
+Prompt:
+Build a `/live` livestream page where readers can go live and clients can join:
+
+1. Reader livestream using Mux or similar SDK  
+2. Clients can send virtual gifts during the stream (hearts, stars, crystals)  
+3. Each gift costs a set amount of credits (from balance)  
+4. Gifts display as animated overlays and are added to reader’s Square earnings  
+5. Show livestream schedule and who's currently live  
+
+Use Square APIs for:
+   - Deducting balance for gifts  
+   - Logging reader earnings  
+   - Managing payout thresholds  
+
+Add a dreamy glowing stream layout with gift animations and spark effects.
+
+
+SECTION 9: Final Touches, Error Handling, and Theming
+Prompt:
+Complete the following for final polish:
+
+1. `/help` – FAQs, embedded chat (PureChat), and support form  
+2. `/policies` – Terms of Service, Privacy Policy, Refund Policy  
+3. `/logout` – Clear token and redirect to homepage  
+4. Global error handling (missing pages, failed payments, broken RTC)  
+5. Page transitions with soft fades, glows, and sparkles  
+6. Mobile-first responsive design  
+
+Apply global theming to match SoulSeer — celestial typography, floaty transitions, and soft neon glow effects.
+
+
+
+
+
+
