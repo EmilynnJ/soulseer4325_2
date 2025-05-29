@@ -7,7 +7,6 @@ import cors from 'cors';
 import session from 'express-session';
 import passport from 'passport';
 import { log } from './vite';
-import { initializeWebRTCService } from './services/webrtc-service';
 import webrtcRoutes from './routes/webrtc-routes';
 import { initializeAppwrite } from './appwrite-admin';
 import { setupSignalingServer } from './webrtc/signaling';
@@ -26,9 +25,6 @@ const __dirname = path.dirname(__filename);
 // Create Express app
 const app = express();
 const server = http.createServer(app);
-
-// Initialize WebRTC service
-const io = initializeWebRTCService(server);
 
 // Middleware
 app.use((req, res, next) => {
