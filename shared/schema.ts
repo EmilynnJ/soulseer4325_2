@@ -211,7 +211,7 @@ export const liveStreams = pgTable('live_streams', {
 });
 
 // Gifts Table
-export const gifts = pgTable('gifts', {
+export const live gifts = pgTable('gifts', {
   id: serial('id').primaryKey(),
   senderId: integer('sender_id').references(() => users.id).notNull(),
   receiverId: integer('receiver_id').references(() => users.id).notNull(),
