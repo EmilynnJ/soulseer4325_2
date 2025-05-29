@@ -105,7 +105,7 @@
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",
     "@types/ws": "^8.5.13",
-    "drizzle-kit": "^0.18.1"
+    "drizzle-kit": "^0.31.1"
   },
   "optionalDependencies": {
     "bufferutil": "^4.0.8"
