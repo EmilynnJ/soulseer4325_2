@@ -60,12 +60,6 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// API routes
-app.use('/api', webrtcRoutes);
-
-// Add WebRTC routes
-app.use('/api/webrtc', webrtcRoutes);
-
 // Serve static files from the React app
 app.use(express.static(path.join(__dirname, '../dist/public')));
 
