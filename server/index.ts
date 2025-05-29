@@ -68,24 +68,6 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../dist/public/index.html'));
 });
 
-// Start the WebRTC billing service
-const stopBillingService = startBillingService();
-
-// Clean up on server shutdown
-process.on('SIGINT', () => {
-  console.log('Server shutting down...');
-  stopBillingService();
-  server.close();
-  process.exit(0);
-});
-
-process.on('SIGTERM', () => {
-  console.log('Server shutting down...');
-  stopBillingService();
-  server.close();
-  process.exit(0);
-});
-
 // Start listening
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
