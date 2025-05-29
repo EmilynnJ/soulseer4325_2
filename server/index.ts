@@ -68,9 +68,6 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../dist/public/index.html'));
 });
 
-// Set up WebSocket for WebRTC signaling
-setupSignalingServer(server);
-
 // Start the WebRTC billing service
 const stopBillingService = startBillingService();
 
