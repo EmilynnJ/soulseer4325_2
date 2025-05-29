@@ -25,10 +25,19 @@ const server = http.createServer(app);
 
 // Middleware
 app.use((req, res, next) => {
-  res.setHeader(
-    'Content-Security-Policy',
-    "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com"
-  );
+res.setHeader(
+  'Content-Security-Policy',
+  [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' https://js.stripe.com https://cdn.jsdelivr.net",
+    "connect-src 'self' https://cloud.appwrite.io https://js.stripe.com https://api.stripe.com",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "img-src 'self' data: https://*",
+    "font-src 'self' https://fonts.gstatic.com",
+    "frame-src https://js.stripe.com",
+    "object-src 'none'"
+  ].join('; ')
+);
   next();
 });
 app.use(cors());
