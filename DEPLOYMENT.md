@@ -42,6 +42,7 @@ SoulSeer uses environment variables for configuration across both client and ser
 | `VITE_APP_DOMAIN` | Application domain | Client | `soulseer.app` |
 | `VITE_APP_STORE_ID` | iOS App Store ID | Client | `your-app-store-id` |
 | `VITE_PLAY_STORE_ID` | Google Play Store ID | Client | `your-play-store-id` |
+| `JWT_SECRET` | Secret key for signing JWT tokens. Critical for authentication security. MUST be a strong, unique value in production. | Server | `a-very-strong-random-secret-key` |
 
 ### How Environment Variables Are Loaded
 
@@ -69,7 +70,7 @@ SoulSeer uses environment variables for configuration across both client and ser
 When deploying to Railway, you'll need to set the environment variables in your Railway project. You can do this through the Railway dashboard or using the CLI:
 
 ```bash
-railway variables set DATABASE_URL=your_postgres_database_url STRIPE_SECRET_KEY=your_stripe_secret_key ...
+railway variables set DATABASE_URL=your_postgres_database_url STRIPE_SECRET_KEY=your_stripe_secret_key JWT_SECRET=your_production_jwt_secret ...
 ```
 
 Make sure to set all the variables listed in the [Environment Variables](#environment-variables) section above.
@@ -121,6 +122,20 @@ Make sure to set all the variables listed in the [Environment Variables](#enviro
    ```bash
    railway run npm run db:push
    ```
+
+## Developer Notes
+
+### Admin User Setup
+
+The script `server/setup-admin.ts` was originally designed for creating an admin user with the previous Appwrite authentication system. Due to the migration to a custom JWT-based email/password system, this script is **currently non-functional** as its Appwrite-specific components have been removed.
+
+If you need to create an initial admin user, this script will require refactoring. You would typically:
+1.  Define the admin user's email and a secure password (perhaps temporarily via environment variables for the script's run, or a more robust credentials management).
+2.  Use the `storage.createUser` method from `server/storage.ts`.
+3.  Ensure the password is hashed using the `hashPassword` utility from `server/auth.ts` before saving.
+4.  Assign the 'admin' role to this user.
+
+Please review and adapt `server/setup-admin.ts` to the new authentication system if this functionality is required.
 
 ## Vercel Deployment (Alternative)
 

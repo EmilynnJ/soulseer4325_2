@@ -293,9 +293,11 @@ Celestial, mystical, and ethereal: Dark-mode default with pink, black, gold, and
 **Integration Requirements:**
 -CUSTOM CODED WEBRTC READING SYSTEM for all real-time communication (chat, voice, video)
 
--FIREBASE FOR AUTH-WILL GIVE CREDENTIALS
+# NOTE: The following authentication and database mentions (Firebase) seem outdated
+# as the project has been migrated to a custom JWT-based auth with PostgreSQL.
+# -FIREBASE FOR AUTH-WILL GIVE CREDENTIALS
+# -FIREBASE FOR DATABASE-WILL GIVE STRING
 
--FIREBASE FOR DATABASE-WILL GIVE STRING
 - Stripe Connect for payment processing and reader payouts
 - CUSTOM CODED WEBRTC READING SYSTEM for live streaming capabilities
 - Secure cloud storage for digital product delivery

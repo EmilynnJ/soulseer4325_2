@@ -14,70 +14,69 @@ type SessionStore = any;
 
 export interface IStorage {
   // User
-  getUser(id: number): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
+  getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   getUserByFirebaseUid?(uid: string): Promise<User | undefined>; // Kept for backward compatibility
   getUserByAppwriteUid?(uid: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
-  updateUser(id: number, user: UserUpdate): Promise<User | undefined>;
+  updateUser(id: string, user: UserUpdate): Promise<User | undefined>;
   getReaders(): Promise<User[]>;
   getOnlineReaders(): Promise<User[]>;
   getAllUsers(): Promise<User[]>;
   
   // Readings
   createReading(reading: InsertReading): Promise<Reading>;
-  getReading(id: number): Promise<Reading | undefined>;
+  getReading(id: number): Promise<Reading | undefined>; // Reading ID is serial
   getReadings(): Promise<Reading[]>;
-  getReadingsByClient(clientId: number): Promise<Reading[]>;
-  getReadingsByReader(readerId: number): Promise<Reading[]>;
-  updateReading(id: number, reading: Partial<InsertReading>): Promise<Reading | undefined>;
+  getReadingsByClient(clientId: string): Promise<Reading[]>;
+  getReadingsByReader(readerId: string): Promise<Reading[]>;
+  updateReading(id: number, reading: Partial<InsertReading>): Promise<Reading | undefined>; // Reading ID is serial
   
   // Products
   createProduct(product: InsertProduct): Promise<Product>;
-  getProduct(id: number): Promise<Product | undefined>;
+  getProduct(id: number): Promise<Product | undefined>; // Product ID is serial
   getProducts(): Promise<Product[]>;
   getFeaturedProducts(): Promise<Product[]>;
-  updateProduct(id: number, product: Partial<InsertProduct>): Promise<Product | undefined>;
+  updateProduct(id: number, product: Partial<InsertProduct>): Promise<Product | undefined>; // Product ID is serial
   
   // Orders
   createOrder(order: InsertOrder): Promise<Order>;
-  getOrder(id: number): Promise<Order | undefined>;
-  getOrdersByUser(userId: number): Promise<Order[]>;
-  updateOrder(id: number, order: Partial<InsertOrder>): Promise<Order | undefined>;
+  getOrder(id: number): Promise<Order | undefined>; // Order ID is serial
+  getOrdersByUser(userId: string): Promise<Order[]>;
+  updateOrder(id: number, order: Partial<InsertOrder>): Promise<Order | undefined>; // Order ID is serial
   
   // Order Items
   createOrderItem(orderItem: InsertOrderItem): Promise<OrderItem>;
-  getOrderItems(orderId: number): Promise<OrderItem[]>;
+  getOrderItems(orderId: number): Promise<OrderItem[]>; // OrderItem ID and Order ID are serial
   
   // Livestreams
   createLivestream(livestream: InsertLivestream): Promise<Livestream>;
-  getLivestream(id: number): Promise<Livestream | undefined>;
+  getLivestream(id: number): Promise<Livestream | undefined>; // Livestream ID is serial
   getLivestreams(): Promise<Livestream[]>;
-  getLivestreamsByUser(userId: number): Promise<Livestream[]>;
-  updateLivestream(id: number, livestream: Partial<InsertLivestream>): Promise<Livestream | undefined>;
+  getLivestreamsByUser(userId: string): Promise<Livestream[]>;
+  updateLivestream(id: number, livestream: Partial<InsertLivestream>): Promise<Livestream | undefined>; // Livestream ID is serial
   
   // Forum Posts
   createForumPost(forumPost: InsertForumPost): Promise<ForumPost>;
-  getForumPost(id: number): Promise<ForumPost | undefined>;
+  getForumPost(id: number): Promise<ForumPost | undefined>; // ForumPost ID is serial
   getForumPosts(): Promise<ForumPost[]>;
-  updateForumPost(id: number, forumPost: Partial<InsertForumPost>): Promise<ForumPost | undefined>;
+  updateForumPost(id: number, forumPost: Partial<InsertForumPost>): Promise<ForumPost | undefined>; // ForumPost ID is serial
   
   // Forum Comments
   createForumComment(forumComment: InsertForumComment): Promise<ForumComment>;
-  getForumCommentsByPost(postId: number): Promise<ForumComment[]>;
+  getForumCommentsByPost(postId: number): Promise<ForumComment[]>; // ForumComment ID and ForumPost ID are serial
   
   // Messages
   createMessage(message: InsertMessage): Promise<Message>;
-  getMessagesByUsers(userId1: number, userId2: number): Promise<Message[]>;
-  getUnreadMessageCount(userId: number): Promise<number>;
-  markMessageAsRead(id: number): Promise<Message | undefined>;
+  getMessagesByUsers(userId1: string, userId2: string): Promise<Message[]>;
+  getUnreadMessageCount(userId: string): Promise<number>;
+  markMessageAsRead(id: number): Promise<Message | undefined>; // Message ID is serial
   
   // Gifts for livestreams
   createGift(gift: InsertGift): Promise<Gift>;
-  getGiftsByLivestream(livestreamId: number): Promise<Gift[]>;
-  getGiftsBySender(senderId: number): Promise<Gift[]>;
-  getGiftsByRecipient(recipientId: number): Promise<Gift[]>;
+  getGiftsByLivestream(livestreamId: number): Promise<Gift[]>; // Livestream ID is serial
+  getGiftsBySender(senderId: string): Promise<Gift[]>;
+  getGiftsByRecipient(recipientId: string): Promise<Gift[]>;
   getUnprocessedGifts(): Promise<Gift[]>;
   markGiftAsProcessed(id: number): Promise<Gift | undefined>;
   
@@ -96,22 +95,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   // User methods
-  async getUser(id: number): Promise<User | undefined> {
+  async getUser(id: string): Promise<User | undefined> {
     try {
       const [user] = await db.select().from(users).where(eq(users.id, id));
       return user;
     } catch (error) {
       console.error("Error getting user:", error);
-      return undefined;
-    }
-  }
-
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    try {
-      const [user] = await db.select().from(users).where(eq(users.username, username));
-      return user;
-    } catch (error) {
-      console.error("Error getting user by username:", error);
       return undefined;
     }
   }
@@ -165,15 +154,20 @@ export class DatabaseStorage implements IStorage {
   async createUser(user: InsertUser): Promise<User> {
     try {
       const now = new Date();
-      const [createdUser] = await db.insert(users).values({
-        ...user,
+      // Ensure hashedPassword is included if provided, and other defaults
+      const userToCreate: typeof users.$inferInsert = {
+        ...user, // This will include email, hashedPassword, fullName, role
         createdAt: now,
-        lastActive: now,
-        isOnline: false,
-        reviewCount: 0,
-        accountBalance: 0,
-      }).returning();
+        updatedAt: now, // Initialize updatedAt
+        // Explicitly set other fields that might not be in InsertUser but have defaults or are managed here
+        // id: user.id, // id is auto-generated by defaultRandom() in schema
+        // email: user.email,
+        // hashedPassword: user.hashedPassword,
+        // fullName: user.fullName,
+        // role: user.role,
+      };
 
+      const [createdUser] = await db.insert(users).values(userToCreate).returning();
       return createdUser;
     } catch (error) {
       console.error("Error creating user:", error);
@@ -181,11 +175,15 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async updateUser(id: number, userData: UserUpdate): Promise<User | undefined> {
+  async updateUser(id: string, userData: UserUpdate): Promise<User | undefined> {
     try {
-      const lastActive = userData.lastActive || new Date();
+      // Ensure updatedAt is handled by the database $onUpdate or manually if needed
+      const dataToUpdate = { ...userData };
+      if (Object.keys(dataToUpdate).length === 0) { // Avoid empty update if only id is passed indirectly
+        return this.getUser(id);
+      }
       const [updatedUser] = await db.update(users)
-        .set({ ...userData, lastActive })
+        .set(dataToUpdate)
         .where(eq(users.id, id))
         .returning();
 
@@ -272,7 +270,7 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async getReadingsByClient(clientId: number): Promise<Reading[]> {
+  async getReadingsByClient(clientId: string): Promise<Reading[]> {
     try {
       return await db.select().from(readings).where(eq(readings.clientId, clientId));
     } catch (error) {
@@ -281,7 +279,7 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async getReadingsByReader(readerId: number): Promise<Reading[]> {
+  async getReadingsByReader(readerId: string): Promise<Reading[]> {
     try {
       return await db.select().from(readings).where(eq(readings.readerId, readerId));
     } catch (error) {
@@ -398,7 +396,7 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async getOrdersByUser(userId: number): Promise<Order[]> {
+  async getOrdersByUser(userId: string): Promise<Order[]> {
     try {
       return await db.select().from(orders).where(eq(orders.userId, userId));
     } catch (error) {
@@ -479,7 +477,7 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async getLivestreamsByUser(userId: number): Promise<Livestream[]> {
+  async getLivestreamsByUser(userId: string): Promise<Livestream[]> {
     try {
       return await db.select().from(livestreams).where(eq(livestreams.userId, userId));
     } catch (error) {
@@ -601,7 +599,7 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async getMessagesByUsers(userId1: number, userId2: number): Promise<Message[]> {
+  async getMessagesByUsers(userId1: string, userId2: string): Promise<Message[]> {
     try {
       return await db.select().from(messages).where(
         or(
@@ -621,7 +619,7 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async getUnreadMessageCount(userId: number): Promise<number> {
+  async getUnreadMessageCount(userId: string): Promise<number> {
     try {
       const result = await db.select({ count: sql`count(*)` })
         .from(messages)
@@ -686,18 +684,17 @@ export class DatabaseStorage implements IStorage {
     }
   }
   
-  async getGiftsBySender(senderId: number): Promise<Gift[]> {
+  async getGiftsBySender(senderId: string): Promise<Gift[]> {
     try {
       return await db.select().from(gifts)
         .where(eq(gifts.senderId, senderId))
         .orderBy(desc(gifts.createdAt));
-    } catch (error) {
-      console.error("Error getting gifts by sender:", error);
+    } catch (error)      console.error("Error getting gifts by sender:", error);
       return [];
     }
   }
   
-  async getGiftsByRecipient(recipientId: number): Promise<Gift[]> {
+  async getGiftsByRecipient(recipientId: string): Promise<Gift[]> {
     try {
       return await db.select().from(gifts)
         .where(eq(gifts.recipientId, recipientId))
