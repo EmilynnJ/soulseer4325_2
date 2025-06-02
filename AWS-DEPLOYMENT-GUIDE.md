@@ -43,7 +43,7 @@ AWS Amplify offers a streamlined deployment process for full-stack applications.
 
 5. **Add Authentication**:
    ```bash
-   amplify add auth
+   amplify add auth # This sets up AWS Cognito, not our custom JWT auth.
    ```
 
 6. **Deploy Your Application**:
@@ -52,6 +52,7 @@ AWS Amplify offers a streamlined deployment process for full-stack applications.
    ```
 
 7. **Configure Environment Variables** in the Amplify Console.
+   Ensure `DATABASE_URL`, `JWT_SECRET` (for custom JWT authentication), `STRIPE_SECRET_KEY`, etc., are set.
 
 ### Option 2: Containerized Deployment with ECS
 
@@ -185,7 +186,7 @@ For more control over your infrastructure:
 2. **Add API and Auth Features**:
    ```bash
    amplify add api
-   amplify add auth
+   amplify add auth # This sets up AWS Cognito.
    ```
 
 3. **Generate Mobile Configuration**:
