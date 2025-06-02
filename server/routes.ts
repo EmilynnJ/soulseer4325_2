@@ -1,7 +1,9 @@
+import authRoutes from './routes/authRoutes';
+const router = express.Router();
+router.use('/api/auth , authRoutes);')
 import express, { type Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { verifyAppwriteToken } from "./auth";
 import { z } from "zod";
 import { UserUpdate, Reading } from "@shared/schema";
 import { db } from "./db";
@@ -13,6 +15,7 @@ import { promisify } from "util";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+export default router;
 
 // Admin middleware
 const requireAdmin = (req: Request, res: Response, next: NextFunction) => {

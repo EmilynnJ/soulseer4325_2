@@ -2,15 +2,13 @@ import { pgTable, text, serial, integer, boolean, timestamp, json, unique, real,
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export const users = pgTable("users", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  email: text("email").notNull().unique(),
-  hashedPassword: text("hashed_password").notNull(),
-  fullName: text("full_name"),
-  role: text("role", { enum: ["client", "reader", "admin"] }).notNull().default("client"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow().$onUpdate(() => new Date()),
-});
+export interface User {
+  id: string;
+  email: string;
+  password: string; // hashed
+  role: 'admin' | 'reader' | 'client';
+  created_at: Date;
+}
 
 export const messages = pgTable("messages", {
   id: serial("id").primaryKey(),

@@ -1,7 +1,6 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { storage } from "./storage";
 import { User as SelectUser } from "@shared/schema";
-// import { Client, Account } from 'appwrite'; // Removed Appwrite import
 import * as bcrypt from 'bcrypt';
 import * as jwt from 'jsonwebtoken';
 
@@ -56,20 +55,6 @@ declare global {
   }
 }
 
-// Appwrite client initialization (REMOVED)
-// const client = new Client()
-//     .setEndpoint('https://nyc.cloud.appwrite.io/v1')
-//     .setProject('681831b30038fbc171cf');
-// const account = new Account(client);
-
-// This interface was used by the old Appwrite user object, can be removed
-// export interface AuthUser {
-//     id: string;
-//     email: string;
-//     name?: string;
-// }
-
-// The duplicated comment block and stray lines are removed here.
 /**
  * Defines the structure of the JWT payload.
  */
@@ -132,8 +117,6 @@ export const verifyJwtToken = async (req: Request, res: Response, next: NextFunc
     return res.status(500).json({ message: 'Internal server error during authentication' });
   }
 };
-
-// Old verifyAppwriteToken function has been completely removed.
 
 /**
  * Setup authentication routes
@@ -231,22 +214,7 @@ export function setupAuth(app: Express) {
     // Server can optionally maintain a blacklist of tokens if needed.
     res.status(200).json({ message: "Logged out successfully" });
   });
-
-  // Old Appwrite-specific register endpoint (commented out)
-  /*
-  app.post("/api/register", async (req, res) => {
-    try {
-      const { fullName, email, role, appwriteUid } = req.body;
-      
-      // Create user in our database
-      const user = await storage.createUser({
-        username: email.split('@')[0], // Generate username from email
-        email,
-        fullName,
-        role: role || "client",
-        appwriteUid // Store Appwrite UID instead of Firebase UID
-      });
-      
+ 
       // Return the created user
       const userResponse = { ...user } as SelectUser;
       delete userResponse.password; // This was for a plain password, not hashed
