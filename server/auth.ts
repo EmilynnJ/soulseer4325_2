@@ -1,6 +1,6 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { storage } from "./storage";
-import { User as SelectUser } from "@shared/schema";
+import { User as SharedUser } from "@shared/schema"; // Renamed for clarity in Express namespace
 import * as bcrypt from 'bcrypt';
 import * as jwt from 'jsonwebtoken';
 
@@ -45,9 +45,9 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 
 declare global {
   namespace Express {
-    interface User extends SelectUser {} // SelectUser is `typeof users.$inferSelect`
+    interface User extends SharedUser {} // Use the imported User type for Express
     interface Request {
-      user?: SelectUser; // User object based on our schema
+      user?: SharedUser; // User object based on our schema
       // isAuthenticated(): boolean; // This can be removed if not used by other parts of the app
                                   // or reimplemented if a similar check is needed.
                                   // For JWT, typically, if req.user exists, they are "authenticated".
@@ -129,7 +129,7 @@ export function setupAuth(app: Express) {
       // but as a safeguard:
       return res.status(401).json({ message: "Unauthorized - User not found after token verification" });
     }
-    // req.user is populated by verifyJwtToken and is of type SelectUser
+    // req.user is populated by verifyJwtToken and is of type SharedUser
     // Exclude hashedPassword from the response
     const { hashedPassword, ...userResponse } = req.user;
     res.json(userResponse);
@@ -214,16 +214,4 @@ export function setupAuth(app: Express) {
     // Server can optionally maintain a blacklist of tokens if needed.
     res.status(200).json({ message: "Logged out successfully" });
   });
- 
-      // Return the created user
-      const userResponse = { ...user } as SelectUser;
-      delete userResponse.password; // This was for a plain password, not hashed
-      
-      res.status(201).json(userResponse);
-    } catch (error) {
-      console.error('Registration error:', error);
-      res.status(500).json({ message: 'Failed to register user' });
-    }
-  });
-  */
 }

@@ -2,11 +2,9 @@ import { createContext, ReactNode, useContext, useEffect, useState } from "react
 import { User } from "@shared/schema";
 import { apiRequest, queryClient } from "../lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-// import { account, ID } from "../lib/appwrite"; // Appwrite import removed
 
 type AuthContextType = {
   user: User | null;
-  // appwriteUser: any | null; // Removed
   idToken: string | null; // This can represent the JWT token itself
   isLoading: boolean;
   error: Error | null;
@@ -27,7 +25,6 @@ export const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
   const [user, setUser] = useState<User | null>(null);
-  // const [appwriteUser, setAppwriteUser] = useState<any | null>(null); // Removed
   const [idToken, setIdToken] = useState<string | null>(null); // Represents JWT
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
@@ -152,7 +149,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider
       value={{
         user,
-        // appwriteUser, // Removed
         idToken,
         isLoading,
         error,

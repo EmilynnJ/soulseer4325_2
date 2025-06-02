@@ -7,7 +7,6 @@ import cors from 'cors';
 import session from 'express-session';
 import passport from 'passport';
 import { log } from './vite';
-// import { initializeAppwrite } from './appwrite-admin'; // Removed Appwrite admin import
 
 // Load environment variables
 config();
@@ -28,7 +27,7 @@ app.use((req, res, next) => {
   res.setHeader("Content-Security-Policy", `
     default-src 'self';
     script-src 'self' 'unsafe-inline' https://js.stripe.com https://cdn.jsdelivr.net;
-    connect-src 'self' https://api.stripe.com https://fonts.googleapis.com https://fonts.gstatic.com; # Removed https://cloud.appwrite.io
+    connect-src 'self' https://api.stripe.com https://fonts.googleapis.com https://fonts.gstatic.com;
     style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
     font-src 'self' https://fonts.gstatic.com;
     img-src 'self' data: https:;

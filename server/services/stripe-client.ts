@@ -3,7 +3,7 @@ import { log } from '../vite';
 
 // Initialize Stripe with API key from environment variables
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
-  apiVersion: '2023-10-16'
+  apiVersion: '2025-02-24.acacia'
 });
 
 /**
@@ -98,7 +98,8 @@ async function capturePartialPayment(
     
     return {
       success: true,
-      amountCaptured: capturedPayment.amount_captured / 100 // Convert back to dollars
+      // amount_captured is on the Charge object, for PaymentIntent it's amount_received
+      amountCaptured: capturedPayment.amount_received / 100 // Convert back to dollars
     };
   } catch (error) {
     log(`Error capturing payment: ${error}`, 'stripe');
@@ -255,6 +256,8 @@ async function addFundsToBalance(
     };
   }
 }
+
+export const stripeInstance = stripe;
 
 export default {
   createOnDemandReadingPayment,

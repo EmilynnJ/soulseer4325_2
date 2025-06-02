@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Clock, User, DollarSign, Phone, MessageSquare, X } from 'lucide-react';
 import { format } from 'date-fns';
+import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 
 interface ChatReadingProps {

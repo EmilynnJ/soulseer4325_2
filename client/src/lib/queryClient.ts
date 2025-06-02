@@ -1,5 +1,4 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
-// import { account } from "./appwrite"; // Appwrite import removed
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {

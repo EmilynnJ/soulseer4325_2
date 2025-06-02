@@ -36,4 +36,4 @@ sql('SELECT 1')
     console.error('Database connection error:', err);
   });
 
-export { sql };
+export { sql, sql as pool };

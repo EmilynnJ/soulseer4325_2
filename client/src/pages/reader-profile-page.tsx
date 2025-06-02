@@ -128,13 +128,14 @@ export default function ReaderProfilePage() {
 
     try {
       // Calculate total price based on duration and type
-      const basePrice = (
-        scheduledReadingOptions.type === "chat" 
-          ? (reader.pricingChat || reader.pricing || 0)
-          : scheduledReadingOptions.type === "voice" 
-            ? (reader.pricingVoice || (reader.pricing ? reader.pricing + 100 : 0))
-            : (reader.pricingVideo || (reader.pricing ? reader.pricing + 200 : 0))
-      );
+      let basePrice = 0;
+      if (scheduledReadingOptions.type === "chat") {
+        basePrice = reader.pricingChat || 0;
+      } else if (scheduledReadingOptions.type === "voice") {
+        basePrice = reader.pricingVoice || 0;
+      } else if (scheduledReadingOptions.type === "video") {
+        basePrice = reader.pricingVideo || 0;
+      }
 
       const totalPrice = basePrice * scheduledReadingOptions.duration;
 
@@ -270,7 +271,7 @@ export default function ReaderProfilePage() {
 
                 <Badge variant="outline" className="bg-primary-dark/50 text-light/80 border-accent/20">
                   <Clock className="w-3 h-3 mr-1 text-accent/60" /> 
-                  {formatPrice(reader.pricing)}/minute
+                  {formatPrice(reader.pricingChat)}/min (chat)
                 </Badge>
               </div>
 
@@ -446,15 +447,15 @@ export default function ReaderProfilePage() {
                     <div className="flex items-center text-light/90 text-xs gap-2">
                       <div className="flex items-center">
                         <MessageSquare className="w-3 h-3 text-accent mr-1" />
-                        {formatPrice(reader.pricingChat || reader.pricing || 0)}
+                        {formatPrice(reader.pricingChat || 0)}
                       </div>
                       <div className="flex items-center">
                         <Phone className="w-3 h-3 text-accent mr-1" />
-                        {formatPrice(reader.pricingVoice || (reader.pricing ? reader.pricing + 100 : 0))}
+                        {formatPrice(reader.pricingVoice || 0)}
                       </div>
                       <div className="flex items-center">
                         <Video className="w-3 h-3 text-accent mr-1" />
-                        {formatPrice(reader.pricingVideo || (reader.pricing ? reader.pricing + 200 : 0))}
+                        {formatPrice(reader.pricingVideo || 0)}
                       </div>
                     </div>
                   </div>
@@ -652,10 +653,10 @@ export default function ReaderProfilePage() {
                       <span>Base rate ({scheduledReadingOptions.type}):</span>
                       <span>{formatPrice(
                         scheduledReadingOptions.type === "chat" 
-                          ? (reader.pricingChat || reader.pricing || 0)
+                          ? (reader.pricingChat || 0)
                           : scheduledReadingOptions.type === "voice" 
-                            ? (reader.pricingVoice || (reader.pricing ? reader.pricing + 100 : 0))
-                            : (reader.pricingVideo || (reader.pricing ? reader.pricing + 200 : 0))
+                            ? (reader.pricingVoice || 0)
+                            : (reader.pricingVideo || 0)
                       )}/min</span>
                     </div>
                     <div className="flex justify-between mb-1 text-light/80 text-sm">

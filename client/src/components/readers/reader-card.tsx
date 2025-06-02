@@ -57,10 +57,10 @@ export function ReaderCard({ reader }: ReaderCardProps) {
           <span className="text-light/90 text-xs font-playfair">{reader.rating || "-"}/5</span>
         </div>
         
-        {/* Pricing */}
-        {reader.pricing && (
+        {/* Pricing (displaying chat pricing as an example) */}
+        {reader.pricingChat && (
           <p className="text-secondary text-xs font-cinzel">
-            ${(reader.pricing / 100).toFixed(2)}/min
+            Chat: ${(reader.pricingChat / 100).toFixed(2)}/min
           </p>
         )}
       </div>

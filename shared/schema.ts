@@ -2,13 +2,30 @@ import { pgTable, text, serial, integer, boolean, timestamp, json, unique, real,
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export interface User {
-  id: string;
-  email: string;
-  password: string; // hashed
-  role: 'admin' | 'reader' | 'client';
-  created_at: Date;
-}
+export const users = pgTable("users", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  email: text("email").notNull().unique(),
+  hashedPassword: text("hashed_password"), // Can be null if using OAuth or other auth methods
+  fullName: text("full_name"),
+  username: text("username").unique(), // Optional, but can be used for profiles/mentions
+  role: text("role", { enum: ["admin", "reader", "client"] }).notNull().default("client"),
+  profileImage: text("profile_image_url"),
+  bio: text("bio"),
+  specialties: json("specialties").$type<string[]>(), // For readers
+  pricingChat: integer("pricing_chat"), // Per minute in cents, for readers - nullable by default
+  pricingVoice: integer("pricing_voice"), // Per minute in cents, for readers - nullable by default
+  pricingVideo: integer("pricing_video"), // Per minute in cents, for readers - nullable by default
+  pricingAudio: integer('pricing_audio'), // Per minute in cents, for readers - nullable by default
+  isOnline: boolean("is_online").default(false),
+  lastActive: timestamp("last_active").defaultNow(),
+  stripeCustomerId: text("stripe_customer_id").unique(),
+  accountBalance: integer("account_balance").default(0).notNull(), // In cents
+  verified: boolean("verified").default(false), // For readers, if they are verified
+  rating: numeric("rating", { precision: 2, scale: 1 }), // Average rating for readers - nullable by default
+  reviewCount: integer("review_count").default(0), // Number of reviews for readers
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
 
 export const messages = pgTable("messages", {
   id: serial("id").primaryKey(),
@@ -193,16 +210,7 @@ export const liveStreams = pgTable('live_streams', {
 });
 
 // Gifts Table
-export const liveGifts = pgTable('gifts', {
-  id: serial('id').primaryKey(),
-  senderId: uuid('sender_id').references(() => users.id).notNull(),
-  receiverId: uuid('receiver_id').references(() => users.id).notNull(),
-  liveStreamId: integer('live_stream_id').references(() => liveStreams.id),
-  amount: numeric('amount', { precision: 10, scale: 2 }).notNull(),
-  message: text('message'),
-  giftType: text('gift_type').notNull(),
-  createdAt: timestamp('created_at').notNull().defaultNow()
-});
+// Removed duplicate live_gifts table. The 'gifts' table already covers this functionality.
 
 // Premium Messages Table
 export const premiumMessages = pgTable('premium_messages', {
@@ -250,8 +258,23 @@ export const notifications = pgTable('notifications', {
 
 // Insert Schemas
 
-export const insertUserSchema = createInsertSchema(users)
-  .omit({ id: true, createdAt: true, updatedAt: true });
+export const insertUserSchema = createInsertSchema(users, {
+  email: z.string().email(),
+  role: z.enum(["admin", "reader", "client"]),
+  fullName: z.string().optional(),
+  username: z.string().optional(),
+  hashedPassword: z.string().optional(),
+  profileImage: z.string().url().optional(),
+  bio: z.string().optional(),
+  specialties: z.array(z.string()).optional(),
+  pricingChat: z.number().int().positive().optional().nullable(),
+  pricingVoice: z.number().int().positive().optional().nullable(),
+  pricingVideo: z.number().int().positive().optional().nullable(),
+  pricingAudio: z.number().int().positive().optional().nullable(),
+  stripeCustomerId: z.string().optional(),
+  accountBalance: z.number().int().optional(),
+  reviewCount: z.number().int().optional(), // Allow reviewCount to be set
+}).omit({ id: true, createdAt: true, updatedAt: true, isOnline: true, lastActive: true, verified: true, rating: true }); // Removed reviewCount from omit
 
 export const insertReadingSchema = createInsertSchema(readings)
   .omit({ 
@@ -261,18 +284,18 @@ export const insertReadingSchema = createInsertSchema(readings)
     rating: true, 
     review: true, 
     startedAt: true, 
-    paymentStatus: true,
-    paymentId: true,
-    paymentLinkUrl: true,
-    stripeCustomerId: true
+    paymentStatus: true, // Defaulted in DB / set by specific logic
+    // paymentId: true, // Ensuring paymentId is NOT omitted (line should be absent or false)
+    paymentLinkUrl: true, // Usually set specifically, keep omitted for general insert
+    stripeCustomerId: true // Usually set specifically, keep omitted for general insert
+    // completedAt is NOT omitted.
   });
 
 export const insertProductSchema = createInsertSchema(products)
   .omit({ 
     id: true, 
-    createdAt: true,
-    stripeProductId: true,
-    stripePriceId: true
+    createdAt: true
+    // stripeProductId and stripePriceId removed from omit
   });
 
 export const insertOrderSchema = createInsertSchema(orders)
@@ -294,12 +317,12 @@ export const insertLivestreamSchema = createInsertSchema(livestreams)
     startedAt: true, 
     endedAt: true, 
     viewerCount: true,
-    duration: true,
-    readingId: true
+    duration: true
+    // readingId, startedAt, endedAt removed from omit
   });
 
 export const insertForumPostSchema = createInsertSchema(forumPosts)
-  .omit({ id: true, createdAt: true, updatedAt: true, likes: true, views: true });
+  .omit({ id: true, createdAt: true, updatedAt: true }); // likes, views removed from omit
 
 export const insertForumCommentSchema = createInsertSchema(forumComments)
   .omit({ id: true, createdAt: true, updatedAt: true, likes: true });

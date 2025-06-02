@@ -1,15 +1,17 @@
 import authRoutes from './routes/authRoutes';
 const router = express.Router();
-router.use('/api/auth , authRoutes);')
+router.use('/api/auth', authRoutes);
+import Stripe from 'stripe'; // Import Stripe namespace
 import express, { type Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { verifyJwtToken } from "./auth"; // Added import
 import { z } from "zod";
 import { UserUpdate, Reading } from "@shared/schema";
 import { db } from "./db";
 import { desc, asc } from "drizzle-orm";
 import { gifts } from "@shared/schema";
-import stripeClient from "./services/stripe-client";
+import stripeClient, { stripeInstance } from "./services/stripe-client";
 import { scrypt, randomBytes } from "crypto";
 import { promisify } from "util";
 import multer from "multer";
@@ -113,7 +115,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const readers = await storage.getReaders();
       // Remove sensitive data
       const sanitizedReaders = readers.map(reader => {
-        const { password, ...safeReader } = reader;
+        const { hashedPassword, ...safeReader } = reader;
         return safeReader;
       });
       res.json(sanitizedReaders);
@@ -127,7 +129,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const readers = await storage.getOnlineReaders();
       // Remove sensitive data
       const sanitizedReaders = readers.map(reader => {
-        const { password, ...safeReader } = reader;
+        const { hashedPassword, ...safeReader } = reader;
         return safeReader;
       });
       res.json(sanitizedReaders);
@@ -149,7 +151,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Remove sensitive data
-      const { password, ...safeReader } = reader;
+      const { hashedPassword, ...safeReader } = reader;
       res.json(safeReader);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch reader" });
@@ -157,31 +159,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Update reader status (online/offline)
-  app.patch("/api/readers/status", verifyAppwriteToken, async (req, res) => {
-    if (req.user.role !== "reader") {
-      return res.status(403).json({ message: "Not authorized" });
-    }
-    
-    try {
-      const { isOnline } = req.body;
-      
-      if (isOnline === undefined) {
-        return res.status(400).json({ message: "isOnline status is required" });
-      }
-      
-      const updatedUser = await storage.updateUser(req.user.id, {
-        isOnline,
-        lastActive: new Date()
-      });
-      
-      res.json({ success: true, user: updatedUser });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to update status" });
-    }
-  });
+  // Removed duplicated route app.patch("/api/readers/status", ...)
   
   // Update reader pricing
-  app.patch("/api/readers/pricing", verifyAppwriteToken, async (req, res) => {
+  app.patch("/api/readers/pricing", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     if (req.user.role !== "reader") {
       return res.status(403).json({ message: "Not authorized" });
     }
@@ -221,7 +203,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updatedUser = await storage.updateUser(req.user.id, update);
       
       // Remove sensitive data before returning
-      const { password, ...safeUser } = updatedUser;
+      // Ensure updatedUser is not undefined before destructuring
+      if (!updatedUser) {
+        return res.status(500).json({ message: "Failed to update user pricing details." });
+      }
+      const { hashedPassword, ...safeUser } = updatedUser;
       
       res.json({ success: true, user: safeUser });
     } catch (error) {
@@ -231,7 +217,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Readings
-  app.post("/api/readings", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/readings", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const readingData = req.body;
       
@@ -242,9 +229,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         type: readingData.type,
         readingMode: "scheduled",
         scheduledFor: readingData.scheduledFor ? new Date(readingData.scheduledFor) : null,
-        duration: readingData.duration || null,
+        duration: readingData.duration || 0, // Ensure duration is not null, provide a default if necessary
+        price: readingData.pricePerMinute || 100, // Set price field (legacy, but notNull)
         pricePerMinute: readingData.pricePerMinute || 100,
         notes: readingData.notes || null
+        // totalPrice can be omitted if nullable or has a default / set later
       });
       
       res.status(201).json(reading);
@@ -253,7 +242,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/readings/client", verifyAppwriteToken, async (req, res) => {
+  app.get("/api/readings/client", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const readings = await storage.getReadingsByClient(req.user.id);
       res.json(readings);
@@ -262,7 +252,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/readings/reader", verifyAppwriteToken, async (req, res) => {
+  app.get("/api/readings/reader", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     if (req.user.role !== "reader") {
       return res.status(401).json({ message: "Not authenticated as reader" });
     }
@@ -275,7 +266,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/readings/:id", verifyAppwriteToken, async (req, res) => {
+  app.get("/api/readings/:id", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -298,7 +290,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.patch("/api/readings/:id/status", verifyAppwriteToken, async (req, res) => {
+  app.patch("/api/readings/:id/status", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -327,7 +320,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Send a chat message in a reading session (no WebSocket - removed)
-  app.post("/api/readings/:id/message", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/readings/:id/message", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -359,7 +353,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // End a reading session (no WebSocket - removed)
-  app.post("/api/readings/:id/end", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/readings/:id/end", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -391,7 +386,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: "completed",
         duration,
         totalPrice: totalCost, // Using totalPrice instead of totalCost to match schema
-        endedAt: new Date()
+        completedAt: new Date() // Use completedAt as per storage.updateReading signature
       });
       
       // Process the payment if this is an on-demand reading
@@ -461,7 +456,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Create a payment intent for reading with per-minute billing
-  app.post("/api/readings/:id/create-billing-intent", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/readings/:id/create-billing-intent", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -486,35 +482,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Calculate initial authorization amount (30 minutes)
-      const initialMinutes = 30;
-      const initialAmount = reading.pricePerMinute * initialMinutes;
+      // const initialMinutes = 30; // This was duplicated, one is removed. The value is used below.
+      const initialMinutes = 30; // This value is internal to createOnDemandReadingPayment's logic and used for client display
       
-      // Create a payment intent with manual capture
-      const { clientSecret, paymentIntentId } = await stripeClient.createPaymentIntent({
-        amount: initialAmount,
-        currency: "usd",
-        metadata: {
-          readingId: reading.id.toString(),
-          readerId: reading.readerId.toString(),
-          clientId: reading.clientId.toString(),
-          readingType: reading.type,
-          pricePerMinute: reading.pricePerMinute.toString(),
-          initialMinutes: initialMinutes.toString(),
-          purpose: 'per_minute_billing'
-        },
-      });
+      // Use the new wrapper function
+      const paymentResult = await stripeClient.createOnDemandReadingPayment(
+        reading.pricePerMinute,
+        parseInt(req.user.id),
+        req.user.fullName || req.user.email || '', // clientName
+        parseInt(reading.readerId),
+        reading.id,
+        reading.type
+      );
+
+      if (!paymentResult.success || !paymentResult.paymentIntentId) {
+        return res.status(500).json({ message: paymentResult.error || "Failed to create payment intent for billing" });
+      }
       
       // Update reading with payment intent ID
+      // Ensure 'paymentId' is a valid field in ReadingUpdate / schema. (billingStatus removed)
       await storage.updateReading(id, {
-        stripePaymentIntentId: paymentIntentId,
-        billingStatus: "pending"
+        paymentId: paymentResult.paymentIntentId // Use paymentId as per storage.updateReading
+        // billingStatus: "pending" // billingStatus does not exist on readings table
       });
       
       res.json({ 
-        clientSecret, 
-        paymentIntentId,
-        initialAmount,
-        initialMinutes,
+        paymentIntentId: paymentResult.paymentIntentId,
+        paymentLinkUrl: paymentResult.paymentLinkUrl,
+        initialAmount: reading.pricePerMinute * initialMinutes, // For client display consistency
+        initialMinutes, // For client display consistency
         pricePerMinute: reading.pricePerMinute
       });
     } catch (error: any) {
@@ -524,7 +520,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Stripe payment intent creation for shop checkout
-  app.post("/api/create-payment-intent", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/create-payment-intent", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const { amount } = req.body;
       
@@ -536,7 +533,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Valid amount is required" });
       }
       
-      const { clientSecret, paymentIntentId } = await stripeClient.createPaymentIntent({
+      const paymentIntent = await stripeInstance.paymentIntents.create({
         amount,
         currency: "usd",
         metadata: {
@@ -546,7 +543,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         },
       });
       
-      res.json({ clientSecret, paymentIntentId });
+      res.json({ clientSecret: paymentIntent.client_secret, paymentIntentId: paymentIntent.id });
     } catch (error: any) {
       console.error('Error creating payment intent:', error);
       res.status(500).json({ message: error.message });
@@ -554,7 +551,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Admin-only routes for product management
-  app.post("/api/products", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/products", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     if (req.user.role !== "admin") {
       return res.status(403).json({ message: "Not authorized" });
     }
@@ -568,7 +566,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.patch("/api/products/:id", verifyAppwriteToken, async (req, res) => {
+  app.patch("/api/products/:id", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     if (req.user.role !== "admin") {
       return res.status(403).json({ message: "Not authorized" });
     }
@@ -592,52 +591,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Sync all products with Stripe
-  app.post("/api/products/sync-with-stripe", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/products/sync-with-stripe", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     if (req.user.role !== "admin") {
       return res.status(403).json({ message: "Not authorized" });
     }
     
     try {
       // 1. Get all products from database
-      const dbProducts = await storage.getProducts();
-      
-      // 2. Sync each product with Stripe
-      const results = await Promise.all(
-        dbProducts.map(async (product) => {
-          try {
-            const { stripeProductId, stripePriceId } = await stripeClient.syncProductWithStripe(product);
-            
-            // 3. Update product in database with Stripe IDs
-            await storage.updateProduct(product.id, { 
-              stripeProductId, 
-              stripePriceId 
-            });
-            
-            return { 
-              id: product.id, 
-              name: product.name, 
-              success: true,
-              stripeProductId,
-              stripePriceId
-            };
-          } catch (error: any) {
-            return { 
-              id: product.id, 
-              name: product.name, 
-              success: false, 
-              error: error.message 
-            };
-          }
-        })
-      );
-      
-      // 4. Return results
-      res.json({
-        totalProducts: dbProducts.length,
-        successCount: results.filter(r => r.success).length,
-        failureCount: results.filter(r => !r.success).length,
-        results
-      });
+      // TODO: Re-implement Stripe product sync logic using stripeInstance.products.create, etc.
+      // This is a complex operation and will be addressed separately if necessary.
+      // For now, returning a placeholder to ensure the endpoint compiles and to acknowledge pending work.
+      console.warn("/api/products/sync-with-stripe endpoint needs reimplementation using stripeInstance after Appwrite removal.");
+      res.status(501).json({ message: "Product sync with Stripe is not fully implemented in this version." });
+
+      // Original logic using the non-existent stripeClient.syncProductWithStripe commented out:
+      // const dbProducts = await storage.getProducts();
+      // const results = await Promise.all(
+      //   dbProducts.map(async (product) => {
+      //     try {
+      //       // This function stripeClient.syncProductWithStripe does not exist.
+      //       // const { stripeProductId, stripePriceId } = await stripeClient.syncProductWithStripe(product);
+      //
+      //       // If re-implementing, use stripeInstance directly. Example:
+      //       // const sProduct = await stripeInstance.products.create(...);
+      //       // const sPrice = await stripeInstance.prices.create(...);
+      //       // await storage.updateProduct(product.id, {
+      //       //   stripeProductId: sProduct.id,
+      //       //   stripePriceId: sPrice.id
+      //       // });
+      //       // return { id: product.id, name: product.name, success: true, stripeProductId: sProduct.id, stripePriceId: sPrice.id };
+      //       throw new Error("Sync logic with stripeInstance not implemented yet.");
+      //     } catch (error: any) {
+      //       return { id: product.id, name: product.name, success: false, error: error.message };
+      //     }
+      //   })
+      // );
+      // res.json({
+      //   totalProducts: dbProducts.length,
+      //   successCount: results.filter(r => r.success).length,
+      //   failureCount: results.filter(r => !r.success).length,
+      //   results
+      // });
     } catch (error: any) {
       console.error("Error syncing products with Stripe:", error);
       res.status(500).json({ message: "Failed to sync products with Stripe" });
@@ -645,14 +640,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Import products from Stripe
-  app.post("/api/products/import-from-stripe", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/products/import-from-stripe", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     if (req.user.role !== "admin") {
       return res.status(403).json({ message: "Not authorized" });
     }
     
     try {
       // 1. Get products from Stripe
-      const stripeProducts = await stripeClient.fetchStripeProducts();
+      const stripeProductList = await stripeInstance.products.list({ active: true, expand: ['data.default_price'] });
+      // Map Stripe products to a structure that matches what the old fetchStripeProducts might have returned
+      // or what the subsequent logic expects.
+      const stripeProducts = stripeProductList.data.map(p => {
+        const priceObject = p.default_price as Stripe.Price | null; // Type assertion
+        return {
+          stripeProductId: p.id,
+          name: p.name,
+          description: p.description || '',
+          // Ensure price is in cents (unit_amount is already in cents)
+          price: priceObject?.unit_amount === null || priceObject?.unit_amount === undefined ? 0 : priceObject.unit_amount,
+          imageUrl: p.images?.[0] || '',
+          // Assuming category, stock, featured are stored in metadata on Stripe
+          category: p.metadata.category || 'Uncategorized',
+          stock: p.metadata.stock ? parseInt(p.metadata.stock) : 0,
+          featured: p.metadata.featured === 'true',
+          stripePriceId: priceObject?.id || ''
+        };
+      });
       
       // 2. Get existing products from DB to check for duplicates
       const dbProducts = await storage.getProducts();
@@ -671,19 +685,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const importResults = await Promise.all(
         newProducts.map(async (product) => {
           try {
+            // Ensure the product object passed to createProduct matches ProductInsert schema
             const newProduct = await storage.createProduct({
               name: product.name,
-              description: product.description,
-              price: product.price,
-              imageUrl: product.imageUrl,
-              category: product.category,
-              stock: product.stock,
-              featured: product.featured,
+              description: product.description || '', // Ensure description is not null
+              price: product.price, // Should be in cents
+              imageUrl: product.imageUrl || '', // Ensure imageUrl is not null
+              category: product.category || 'Uncategorized', // Ensure category is not null
+              stock: product.stock || 0, // Ensure stock is not null
+              featured: product.featured || false, // Ensure featured is not null
               stripeProductId: product.stripeProductId,
               stripePriceId: product.stripePriceId
             });
             
-            return { 
+            return {
               id: newProduct.id, 
               name: newProduct.name, 
               success: true 
@@ -712,7 +727,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Orders
-  app.post("/api/orders", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/orders", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const orderData = req.body;
       
@@ -740,7 +756,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/orders", verifyAppwriteToken, async (req, res) => {
+  app.get("/api/orders", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const orders = await storage.getOrdersByUser(req.user.id);
       res.json(orders);
@@ -749,7 +766,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/orders/:id", verifyAppwriteToken, async (req, res) => {
+  app.get("/api/orders/:id", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -793,7 +811,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post("/api/livestreams", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/livestreams", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     if (req.user.role !== "reader") {
       return res.status(403).json({ message: "Not authorized" });
     }
@@ -820,7 +839,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.patch("/api/livestreams/:id/status", verifyAppwriteToken, async (req, res) => {
+  app.patch("/api/livestreams/:id/status", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -850,7 +870,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Gifting system for livestreams
-  app.post("/api/gifts", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/gifts", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const giftData = req.body;
       const userId = req.user.id;
@@ -953,7 +974,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/gifts/received", verifyAppwriteToken, async (req, res) => {
+  app.get("/api/gifts/received", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const gifts = await storage.getGiftsByRecipient(req.user.id);
       
@@ -970,7 +992,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/gifts/sent", verifyAppwriteToken, async (req, res) => {
+  app.get("/api/gifts/sent", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const gifts = await storage.getGiftsBySender(req.user.id);
       
@@ -988,7 +1011,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Admin endpoint to get unprocessed gifts
-  app.get("/api/admin/gifts/unprocessed", verifyAppwriteToken, requireAdmin, async (req, res) => {
+  app.get("/api/admin/gifts/unprocessed", verifyJwtToken, requireAdmin, async (req, res) => { // Replaced middleware
+    // No !req.user check needed here as requireAdmin implies verifyJwtToken has run and populated req.user,
+    // and requireAdmin itself checks req.isAuthenticated() which relies on req.user.
     try {
       // Get all unprocessed gifts
       const unprocessedGifts = await storage.getUnprocessedGifts();
@@ -1016,7 +1041,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Admin endpoint to get all gifts
-  app.get("/api/admin/gifts", verifyAppwriteToken, requireAdmin, async (req, res) => {
+  app.get("/api/admin/gifts", verifyJwtToken, requireAdmin, async (req, res) => { // Replaced middleware
+    // No !req.user check needed here due to requireAdmin
     try {
       // Get all gifts with optional limit
       const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
@@ -1049,7 +1075,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin endpoint to process gifts 
-  app.post("/api/admin/gifts/process", verifyAppwriteToken, requireAdmin, async (req, res) => {
+  app.post("/api/admin/gifts/process", verifyJwtToken, requireAdmin, async (req, res) => { // Replaced middleware
+    // No !req.user check needed here due to requireAdmin
     try {
       // Get all unprocessed gifts
       const unprocessedGifts = await storage.getUnprocessedGifts();
@@ -1107,7 +1134,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post("/api/forum/posts", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/forum/posts", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const postData = req.body;
       
@@ -1147,7 +1175,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post("/api/forum/posts/:id/like", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/forum/posts/:id/like", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1199,7 +1228,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post("/api/forum/posts/:id/comments", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/forum/posts/:id/comments", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1226,21 +1256,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Messages
-  app.get("/api/messages/:userId", verifyAppwriteToken, async (req, res) => {
+  app.get("/api/messages/:userId", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
-      const userId = parseInt(req.params.userId);
-      if (isNaN(userId)) {
+      const targetUserIdStr = req.params.userId;
+      const targetUserId = parseInt(targetUserIdStr);
+      if (isNaN(targetUserId)) {
         return res.status(400).json({ message: "Invalid user ID" });
       }
       
-      const messages = await storage.getMessagesByUsers(req.user.id, userId);
+      const messages = await storage.getMessagesByUsers(req.user.id, targetUserId);
       res.json(messages);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch messages" });
     }
   });
   
-  app.post("/api/messages", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/messages", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const messageData = req.body;
       
@@ -1258,7 +1291,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.patch("/api/messages/:id/read", verifyAppwriteToken, async (req, res) => {
+  app.patch("/api/messages/:id/read", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1276,7 +1310,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/messages/unread/count", verifyAppwriteToken, async (req, res) => {
+  app.get("/api/messages/unread/count", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const count = await storage.getUnreadMessageCount(req.user.id);
       res.json({ count });
@@ -1293,7 +1328,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Create a payment intent for on-demand readings
-  app.post("/api/stripe/create-payment-intent", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/stripe/create-payment-intent", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const { amount, readingId, metadata = {} } = req.body;
       
@@ -1302,19 +1338,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Use Stripe customer ID if available, or create a new one later
-      const customerId = req.user.stripeCustomerId;
+      const customerId = req.user.stripeCustomerId || undefined; // Ensure undefined if null
       
-      const result = await stripeClient.createPaymentIntent({
+      const paymentIntent = await stripeInstance.paymentIntents.create({
         amount,
-        ...(customerId ? { customerId } : {}),
+        currency: 'usd', // Assuming currency
+        customer: customerId,
         metadata: {
           readingId: readingId?.toString() || '',
           userId: req.user.id.toString(),
           ...metadata
-        }
+        },
       });
       
-      res.json(result);
+      res.json({ clientSecret: paymentIntent.client_secret, paymentIntentId: paymentIntent.id });
     } catch (error: any) {
       console.error("Error creating payment intent:", error);
       res.status(500).json({ message: error.message });
@@ -1322,7 +1359,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Update an existing payment intent (for pay-per-minute)
-  app.post("/api/stripe/update-payment-intent", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/stripe/update-payment-intent", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const { paymentIntentId, amount, metadata = {} } = req.body;
       
@@ -1330,19 +1368,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Payment intent ID is required" });
       }
       
-      if (!amount || isNaN(amount)) {
-        return res.status(400).json({ message: "Valid amount is required" });
+      if (!amount || isNaN(amount) || amount <= 0) { // Ensure positive amount
+        return res.status(400).json({ message: "Valid positive amount is required" });
       }
       
-      const result = await stripeClient.updatePaymentIntent(paymentIntentId, {
+      const updatedPaymentIntent = await stripeInstance.paymentIntents.update(paymentIntentId, {
         amount,
-        metadata: {
+        metadata: { // Stripe's update merges metadata by default.
           ...metadata,
           updatedAt: new Date().toISOString()
         }
       });
       
-      res.json(result);
+      res.json({ clientSecret: updatedPaymentIntent.client_secret, paymentIntentId: updatedPaymentIntent.id });
     } catch (error: any) {
       console.error("Error updating payment intent:", error);
       res.status(500).json({ message: error.message });
@@ -1350,7 +1388,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Capture a payment intent (for finalized pay-per-minute sessions)
-  app.post("/api/stripe/capture-payment-intent", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/stripe/capture-payment-intent", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const { paymentIntentId } = req.body;
       
@@ -1358,8 +1397,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Payment intent ID is required" });
       }
       
-      const result = await stripeClient.capturePaymentIntent(paymentIntentId);
-      res.json(result);
+      const capturedIntent = await stripeInstance.paymentIntents.capture(paymentIntentId);
+      res.json({
+        paymentIntentId: capturedIntent.id,
+        status: capturedIntent.status,
+        clientSecret: capturedIntent.client_secret
+      });
     } catch (error: any) {
       console.error("Error capturing payment intent:", error);
       res.status(500).json({ message: error.message });
@@ -1367,7 +1410,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Create an on-demand reading session
-  app.post("/api/readings/on-demand", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/readings/on-demand", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const { readerId, type } = req.body;
       
@@ -1401,11 +1445,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let pricePerMinute = 100; // Default $1/min
       
       if (type === 'chat') {
-        pricePerMinute = reader.pricingChat || reader.pricing || 100;
+        pricePerMinute = reader.pricingChat || 100; // Removed reader.pricing
       } else if (type === 'voice') {
-        pricePerMinute = reader.pricingVoice || reader.pricing || 200;
+        pricePerMinute = reader.pricingVoice || 200; // Removed reader.pricing
       } else if (type === 'video') {
-        pricePerMinute = reader.pricingVideo || reader.pricing || 300;
+        pricePerMinute = reader.pricingVideo || 300; // Removed reader.pricing
       }
       
       // Create a new reading record
@@ -1455,7 +1499,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Schedule a reading (fixed price one-time payment)
-  app.post("/api/readings/schedule", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/readings/schedule", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const { readerId, type, duration, scheduledFor, notes, price } = req.body;
       
@@ -1490,79 +1535,98 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const clientId = req.user.id;
       
-      // Create a Stripe payment intent for the full amount
       try {
-        const stripeCustomerId = req.user.stripeCustomerId;
-        let customerId = stripeCustomerId;
+        let stripeCustomerId = req.user.stripeCustomerId;
         
-        // Create a new Stripe customer if the user doesn't have one
-        if (!customerId) {
-          const customer = await stripeClient.customers.create({
-            email: req.user.email,
-            name: req.user.fullName || req.user.username,
+        if (!stripeCustomerId) {
+          const customer = await stripeInstance.customers.create({ // Use stripeInstance
+            email: req.user.email || undefined,
+            name: req.user.fullName || req.user.username || undefined,
           });
-          customerId = customer.id;
-          
-          // Update user with Stripe customer ID
-          await storage.updateUser(clientId, {
-            stripeCustomerId: customerId
+          stripeCustomerId = customer.id;
+          await storage.updateUser(req.user.id, { // Use req.user.id for consistency
+            stripeCustomerId: stripeCustomerId
           });
         }
-        
-        // Create a payment intent for the full reading cost
-        const paymentIntent = await stripeClient.paymentIntents.create({
-          amount: price,
-          currency: 'usd',
-          customer: customerId,
-          payment_method_types: ['card'],
-          metadata: {
-            readingType: 'scheduled',
-            clientId: clientId.toString(),
-            readerId: readerId.toString(),
-            type,
-            duration: duration.toString(),
-            scheduledFor: scheduledDate.toISOString(),
-          },
-        });
-        
-        // Create the reading in "waiting_payment" status
-        const reading = await storage.createReading({
+
+        // Create the reading record first to get an ID, without Stripe PI ID yet
+        const tempReading = await storage.createReading({
           readerId,
-          clientId,
+          clientId: req.user.id, // Use req.user.id
           type,
           status: "waiting_payment",
-          price: price / duration, // Store the per-minute rate
+          price: price / duration, // This is effectively the per-minute rate for this context
+          pricePerMinute: price / duration, // Explicitly set pricePerMinute
           duration,
-          totalPrice: price,
+          totalPrice: price, // This is the total price for the scheduled session
           scheduledFor: scheduledDate,
           notes: notes || null,
           readingMode: "scheduled",
-          stripePaymentIntentId: paymentIntent.id
+          // stripePaymentIntentId (now paymentId) will be updated after Stripe call
         });
         
-        // Return the client secret for the payment intent
-        return res.status(201).json({ 
-          reading,
-          clientSecret: paymentIntent.client_secret,
-          paymentLink: `/checkout?clientSecret=${paymentIntent.client_secret}&readingId=${reading.id}`
+        if (!tempReading) {
+          return res.status(500).json({ message: "Failed to create reading record before payment." });
+        }
+
+        // Now create the scheduled reading payment with Stripe
+        const paymentResult = await stripeClient.createScheduledReadingPayment(
+          price, // totalAmount
+          parseInt(req.user.id),
+          req.user.fullName || req.user.email || '',
+          readerId,
+          tempReading.id, // Pass the newly created reading's ID
+          type
+        );
+
+        if (!paymentResult.success || !paymentResult.paymentIntentId) {
+          // If Stripe call fails, mark reading as cancelled or payment_failed
+          await storage.updateReading(tempReading.id, { status: "payment_failed" });
+          return res.status(400).json({
+            message: "Payment processing error",
+            error: paymentResult.error || "Failed to create scheduled payment intent"
+          });
+        }
+
+        // Update reading with the Stripe Payment Intent ID
+        const finalReading = await storage.updateReading(tempReading.id, {
+          stripePaymentIntentId: paymentResult.paymentIntentId
         });
         
-      } catch (stripeError) {
-        console.error("Stripe error creating payment intent:", stripeError);
-        return res.status(400).json({ 
-          message: "Payment processing error",
-          error: stripeError.message 
+        if (!finalReading) {
+             // This case implies that the tempReading existed, but update failed.
+             // Might need more robust error handling or rollback for Stripe PI if possible.
+            await storage.updateReading(tempReading.id, { status: "payment_failed" }); // Mark as failed
+            return res.status(500).json({ message: "Failed to finalize reading record with payment ID."});
+        }
+
+        return res.status(201).json({
+          reading: finalReading,
+          paymentIntentId: paymentResult.paymentIntentId,
+          paymentLinkUrl: paymentResult.paymentLinkUrl
+          // clientSecret is not directly returned by this wrapper
         });
+
+      } catch (error: any) { // Catch more specific error types if possible
+        console.error("Error during schedule reading (Stripe or DB):", error);
+        // Ensure a response is sent if an error occurs before typical return paths
+        if (!res.headersSent) {
+            return res.status(500).json({
+              message: "Failed to schedule reading due to an internal error.",
+              error: error.message
+            });
+        }
       }
       
-    } catch (error) {
-      console.error("Error scheduling reading:", error);
+    } catch (error) { // Outer catch for initial request validation errors
+      console.error("Error scheduling reading (validation or pre-Stripe):", error);
       return res.status(500).json({ message: "Failed to schedule reading" });
     }
   });
   
   // Start an on-demand reading session (after payment) (no notify WebSocket)
-  app.post("/api/readings/:id/start", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/readings/:id/start", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1599,7 +1663,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Start billing for a reading session
-  app.post("/api/readings/:id/start-billing", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/readings/:id/start-billing", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1630,9 +1695,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Update reading with billing status
       const updatedReading = await storage.updateReading(id, {
-        billingStatus: "active",
-        billingStartedAt: new Date(),
-        stripePaymentIntentId: paymentIntentId
+        // billingStatus: "active", // billingStatus does not exist on readings table
+        billingStartedAt: new Date(), // This should be fine as it's not omitted
+        paymentId: paymentIntentId // Use paymentId
       });
       
       res.json({
@@ -1647,7 +1712,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Pause billing for a reading session
-  app.post("/api/readings/:id/pause-billing", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/readings/:id/pause-billing", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1699,9 +1765,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Update reading with billing status and accumulated minutes
       const updatedReading = await storage.updateReading(id, {
-        billingStatus: "paused",
-        billingPausedAt: now,
-        billedMinutes: (reading.billedMinutes || 0) + elapsedMinutes
+        // billingStatus: "paused", // billingStatus does not exist on readings table
+        billingPausedAt: now, // This should be fine
+        billedMinutes: (reading.billedMinutes || 0) + elapsedMinutes // This should be fine
       });
       
       res.json({
@@ -1719,7 +1785,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Process per-minute billing tick
-  app.post("/api/readings/:id/billing-tick", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/readings/:id/billing-tick", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1790,7 +1857,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Complete an on-demand reading session and process payment from account balance (no notify WebSocket)
-  app.post("/api/readings/:id/end", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/readings/:id/end", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1831,75 +1899,97 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // If using Stripe payment intent, capture the final amount
       if (reading.stripePaymentIntentId) {
         try {
-          // Capture the final payment
-          const captureResult = await stripeClient.capturePaymentIntent(reading.stripePaymentIntentId);
-          console.log(`Captured payment intent ${reading.stripePaymentIntentId} with final amount ${captureResult.amount}`);
-          
-          // Update reading with payment details
-          await storage.updateReading(id, {
-            paymentStatus: "paid",
-            paymentId: reading.stripePaymentIntentId,
-            billingStatus: "completed"
-          });
+          const paymentIntentToCapture = await stripeInstance.paymentIntents.retrieve(reading.stripePaymentIntentId);
+
+          // Ensure amount is not captured if it's zero or PI is not capturable.
+          if (paymentIntentToCapture.status === 'requires_capture' && paymentIntentToCapture.amount_capturable && paymentIntentToCapture.amount_capturable > 0) {
+            const captureResult = await stripeInstance.paymentIntents.capture(reading.stripePaymentIntentId); // Use stripeInstance
+            console.log(`Captured payment intent ${reading.stripePaymentIntentId} with final amount ${captureResult.amount_received}`);
+
+            await storage.updateReading(id, {
+              paymentStatus: "paid",
+              paymentId: reading.stripePaymentIntentId, // This is fine
+              // billingStatus: "completed" // billingStatus does not exist on readings table
+            });
+          } else if (paymentIntentToCapture.status === 'succeeded') {
+            console.log(`Payment intent ${reading.stripePaymentIntentId} already succeeded. Amount: ${paymentIntentToCapture.amount_received}`);
+            await storage.updateReading(id, {
+              paymentStatus: "paid",
+              paymentId: reading.stripePaymentIntentId, // This is fine
+              // billingStatus: "completed" // billingStatus does not exist on readings table
+            });
+          } else {
+            console.warn(`Payment intent ${reading.stripePaymentIntentId} not captured. Status: ${paymentIntentToCapture.status}, Amount Capturable: ${paymentIntentToCapture.amount_capturable}`);
+            // Fallback to internal payment if capture failed or not applicable
+            await processInternalPaymentFallbackHelper(reading, totalPrice, storage, id, duration);
+          }
         } catch (stripeError) {
-          console.error('Error capturing payment intent:', stripeError);
-          // Continue with internal payment processing as fallback
+          console.error('Error capturing/retrieving payment intent:', stripeError);
+          await processInternalPaymentFallbackHelper(reading, totalPrice, storage, id, duration);
         }
       } else {
-        // Process payment from client's account balance (legacy method)
-        const client = await storage.getUser(reading.clientId);
-        if (!client) {
-          return res.status(404).json({ message: "Client not found" });
-        }
-        
-        // Check if client has sufficient balance
-        const currentBalance = client.accountBalance || 0;
-        if (currentBalance < totalPrice) {
-          return res.status(400).json({ 
-            message: "Insufficient account balance. Please add funds to continue.",
-            balance: currentBalance,
-            required: totalPrice
-          });
-        }
-        
-        // Deduct from client's balance
-        await storage.updateUser(client.id, {
-          accountBalance: currentBalance - totalPrice
-        });
-        
-        // Add to reader's balance (if reader)
-        const reader = await storage.getUser(reading.readerId);
-        if (reader && reader.role === "reader") {
-          const readerShare = Math.floor(totalPrice * 0.7);
-          await storage.updateUser(reader.id, {
-            accountBalance: (reader.accountBalance || 0) + readerShare
-          });
-        }
+        // If no stripePaymentIntentId, directly process internally
+        await processInternalPaymentFallbackHelper(reading, totalPrice, storage, id, duration);
       }
       
-      // Update reading with completion details
-      const now = new Date();
-      const updatedReading = await storage.updateReading(id, {
-        status: "completed",
-        completedAt: now,
-        duration,
-        totalPrice,
-        paymentStatus: "paid",
-        paymentId: `internal-${Date.now()}`
-      });
-      
-      res.json({
-        success: true,
-        reading: updatedReading
-      });
-    } catch (error) {
-      console.error('Error completing reading:', error);
-      res.status(500).json({ message: "Failed to complete reading" });
+      // Fetch the latest reading state to send back in all cases (success/fallback)
+      const finalReadingState = await storage.getReading(id);
+      if (!res.headersSent) { // Ensure response is sent only once
+        res.json({
+          success: true,
+          reading: finalReadingState
+        });
+      }
+    } catch (error: any) { // Catch errors from try block or processInternalPaymentFallback
+      console.error('Error completing reading:', error.message);
+      if (!res.headersSent) {
+        res.status(500).json({ message: error.message || "Failed to complete reading" });
+      }
     }
   });
+
+// Define fallback for internal payment processing locally or ensure it's correctly scoped
+// Moved processInternalPaymentFallback outside the route handler to module scope (or at least before registerRoutes)
+async function processInternalPaymentFallbackHelper(reading: any, totalPrice: number, storage: any, id: number, duration: number | null) { // Added more specific params
+  console.log(`Processing internal payment for reading ${id}`);
+  const client = await storage.getUser(reading.clientId);
+  if (!client) {
+    console.error(`Client not found for internal payment (Reading ID: ${id}, Client ID: ${reading.clientId})`);
+    throw new Error("Client not found for internal payment processing");
+  }
+
+  const currentBalance = client.accountBalance || 0;
+  if (currentBalance < totalPrice) {
+    console.warn(`Insufficient balance for internal payment (Reading ID: ${id}, Client ID: ${reading.clientId})`);
+    await storage.updateReading(id, { status: "payment_failed", paymentStatus: "failed" });
+    throw new Error("Insufficient account balance for internal payment.");
+  }
+
+  await storage.updateUser(client.id, {
+    accountBalance: currentBalance - totalPrice
+  });
+
+  const reader = await storage.getUser(reading.readerId);
+  if (reader && reader.role === "reader") {
+    const readerShare = Math.floor(totalPrice * 0.7);
+    await storage.updateUser(reader.id, {
+      accountBalance: (reader.accountBalance || 0) + readerShare
+    });
+  }
+  await storage.updateReading(id, {
+    status: "completed",
+    completedAt: new Date(),
+    duration: duration || reading.duration, // Use passed duration or reading's duration
+    totalPrice,
+    paymentStatus: "paid_internal",
+    paymentId: `internal-${Date.now()}`
+  });
+  console.log(`Internal payment processed for reading ${id}`);
+}
   
   // Rate a completed reading (no notify WebSocket)
-  app.post("/api/readings/:id/rate", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/readings/:id/rate", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1945,7 +2035,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Account Balance Management
-  app.get('/api/user/balance', verifyAppwriteToken, async (req, res) => {
+  app.get('/api/user/balance', verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const user = await storage.getUser(req.user.id);
       if (!user) {
@@ -1963,7 +2054,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Get user's reading history
-  app.get('/api/users/:id/readings', verifyAppwriteToken, async (req, res) => {
+  app.get('/api/users/:id/readings', verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     // Users can only access their own readings
     if (req.user.id !== parseInt(req.params.id) && req.user.role !== 'admin') {
       return res.status(403).json({ message: "Not authorized" });
@@ -1999,7 +2091,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Get user's upcoming readings
-  app.get('/api/users/:id/readings/upcoming', verifyAppwriteToken, async (req, res) => {
+  app.get('/api/users/:id/readings/upcoming', verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     // Users can only access their own upcoming readings
     if (req.user.id !== parseInt(req.params.id) && req.user.role !== 'admin') {
       return res.status(403).json({ message: "Not authorized" });
@@ -2042,7 +2135,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Add funds to account balance 
-  app.post('/api/user/add-funds', verifyAppwriteToken, async (req, res) => {
+  app.post('/api/user/add-funds', verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     const { amount } = req.body;
     
     if (!amount || isNaN(amount) || amount <= 0) {
@@ -2050,16 +2144,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     
     try {
-      // Create a Stripe payment intent to add funds
-      const result = await stripeClient.createPaymentIntent({
+      const paymentResult = await stripeClient.addFundsToBalance(
         amount,
-        metadata: {
-          userId: req.user.id.toString(),
-          purpose: 'account_funding'
-        }
-      });
+        parseInt(req.user.id), // Wrapper expects number
+        req.user.email || undefined // Pass email if available
+      );
+
+      if (!paymentResult.success || !paymentResult.paymentIntentId) {
+        return res.status(500).json({ message: paymentResult.error || "Failed to create payment intent for adding funds" });
+      }
       
-      res.json(result);
+      // Client will use paymentIntentId or paymentLinkUrl from response
+      res.json({
+        paymentIntentId: paymentResult.paymentIntentId,
+        paymentLinkUrl: paymentResult.paymentLinkUrl
+        // clientSecret is not returned by this wrapper
+      });
     } catch (error: any) {
       console.error("Error creating payment intent for adding funds:", error);
       res.status(500).json({ message: error.message });
@@ -2067,7 +2167,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Confirm added funds (after payment is completed)
-  app.post('/api/user/confirm-funds', verifyAppwriteToken, async (req, res) => {
+  app.post('/api/user/confirm-funds', verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     const { paymentIntentId } = req.body;
     
     if (!paymentIntentId) {
@@ -2076,9 +2177,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     try {
       // Check if payment intent exists and is valid
-      const paymentIntent = await stripeClient.retrievePaymentIntent(paymentIntentId);
+      const paymentIntent = await stripeInstance.paymentIntents.retrieve(paymentIntentId); // Use stripeInstance
       
-      if (paymentIntent.status !== "succeeded") {
+      if (!paymentIntent || paymentIntent.status !== "succeeded") { // Add null check for paymentIntent
         return res.status(400).json({ message: "Payment not completed" });
       }
       
@@ -2117,7 +2218,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Admin API routes
   
   // Get all readings (admin only)
-  app.get("/api/admin/readings", verifyAppwriteToken, async (req, res) => {
+  app.get("/api/admin/readings", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     if (req.user.role !== "admin") {
       return res.status(403).json({ message: "Unauthorized. Admin access required." });
     }
@@ -2143,7 +2245,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Get all readers (admin only)
-  app.get("/api/admin/readers", verifyAppwriteToken, async (req, res) => {
+  app.get("/api/admin/readers", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     if (req.user.role !== "admin") {
       return res.status(403).json({ message: "Unauthorized. Admin access required." });
     }
@@ -2158,7 +2261,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Get all users (admin only)
-  app.get("/api/admin/users", verifyAppwriteToken, requireAdmin, async (req, res) => {
+  app.get("/api/admin/users", verifyJwtToken, requireAdmin, async (req, res) => { // Replaced middleware
+    // No !req.user check needed here due to requireAdmin
     try {
       // We need to get all users - adapted storage method might be needed
       const users = await storage.getAllUsers();
@@ -2192,7 +2296,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Admin endpoint to add new readers with profile image
-  app.post("/api/admin/readers", verifyAppwriteToken, requireAdmin, upload.single('profileImage'), async (req: any, res: any) => {
+  app.post("/api/admin/readers", verifyJwtToken, requireAdmin, async (req: any, res: any) => { // Replaced middleware, requireAdmin already checks req.user
     try {
       console.log("Reader form submission received:", req.body);
       const { username, password, email, fullName, bio, ratePerMinute, specialties } = req.body;
@@ -2288,7 +2392,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Livestream API for readings
-  app.post("/api/readings/:id/livestream", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/readings/:id/livestream", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const readingId = parseInt(req.params.id);
       if (isNaN(readingId)) {
@@ -2343,7 +2448,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // API endpoint to start a livestream
-  app.post("/api/livestreams/:id/start", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/livestreams/:id/start", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const livestreamId = parseInt(req.params.id);
       if (isNaN(livestreamId)) {
@@ -2374,7 +2480,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // API endpoint to end a livestream
-  app.post("/api/livestreams/:id/end", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/livestreams/:id/end", verifyJwtToken, async (req, res) => { // Replaced middleware
+    if (!req.user) { return res.status(401).json({ message: 'Unauthorized - User not found in request' }); }
     try {
       const livestreamId = parseInt(req.params.id);
       if (isNaN(livestreamId)) {
