@@ -1,6 +1,6 @@
 import authRoutes from './routes/authRoutes';
 const router = express.Router();
-router.use('/api/auth , authRoutes);')
+router.use('/api/auth', authRoutes);
 import express, { type Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
