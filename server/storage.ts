@@ -3,7 +3,6 @@ import session from "express-session";
 import createMemoryStore from "memorystore";
 import connectPgSimple from "connect-pg-simple";
 import { db } from "./db";
-import { pool } from "./database";
 import { eq, and, or, desc, isNull, asc, sql } from "drizzle-orm";
 
 const MemoryStore = createMemoryStore(session);
@@ -689,7 +688,8 @@ export class DatabaseStorage implements IStorage {
       return await db.select().from(gifts)
         .where(eq(gifts.senderId, senderId))
         .orderBy(desc(gifts.createdAt));
-    } catch (error)      console.error("Error getting gifts by sender:", error);
+    } catch (error) {
+      console.error("Error getting gifts by sender:", error);
       return [];
     }
   }
