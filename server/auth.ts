@@ -215,7 +215,3 @@ export function setupAuth(app: Express) {
     res.status(200).json({ message: "Logged out successfully" });
   });
 }
-
-// Legacy compatibility alias. Old routes still import verifyAppwriteToken
-// so export it here to avoid breaking existing code.
-export const verifyAppwriteToken = verifyJwtToken;

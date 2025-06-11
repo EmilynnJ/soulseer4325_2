@@ -27,10 +27,10 @@ async function processGifts() {
 
         // Update reader's balance
         const updatedReader = await storage.updateUser(reader.id, {
-          balance: (reader.balance || 0) + readerShare
+          accountBalance: (Number(reader.accountBalance) || 0) + readerShare
         });
 
-        log(`Updated balance for reader ${reader.username} by +$${readerShare}`, 'worker');
+        log(`Updated balance for reader ${reader.fullName || reader.email} by +$${readerShare}`, 'worker');
 
         // Mark gift as processed
         await storage.markGiftAsProcessed(gift.id);
@@ -53,17 +53,17 @@ async function processExpiredLivestreams() {
     const now = new Date();
     
     for (const livestream of livestreams) {
-      // Skip if not active or doesn't have an endTime
-      if (livestream.status !== 'active' || !livestream.scheduledEndTime) continue;
-      
-      const endTime = new Date(livestream.scheduledEndTime);
+      // Skip if not active or doesn't have an estimated end time
+      if (livestream.status !== 'active' || !livestream.endedAt) continue;
+
+      const endTime = new Date(livestream.endedAt);
       
       if (now > endTime) {
         log(`Ending expired livestream: ${livestream.id}`, 'worker');
         
         await storage.updateLivestream(livestream.id, {
           status: 'ended',
-          actualEndTime: now
+          endedAt: now
         });
         
         log(`Livestream ${livestream.id} marked as ended`, 'worker');
