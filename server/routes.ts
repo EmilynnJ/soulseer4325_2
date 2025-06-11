@@ -776,6 +776,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to fetch order" });
     }
   });
+
+  // Reader Applications
+  app.post("/api/applications", async (req, res) => {
+    try {
+      const appData = req.body;
+      if (!appData.fullName || !appData.email) {
+        return res.status(400).json({ message: "Missing fields" });
+      }
+      const application = await storage.createReaderApplication({
+        fullName: appData.fullName,
+        email: appData.email,
+        experience: appData.experience || null,
+      });
+      res.status(201).json(application);
+    } catch (error) {
+      console.error('Error creating application:', error);
+      res.status(500).json({ message: 'Failed to submit application' });
+    }
+  });
   
   // Livestreams
   app.get("/api/livestreams", async (req, res) => {

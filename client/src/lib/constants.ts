@@ -9,6 +9,7 @@ export const PATHS = {
   DASHBOARD: '/dashboard',
   HELP: '/help',
   POLICIES: '/policies',
+  APPLY: '/apply',
   AUTH: '/auth',
 };
 

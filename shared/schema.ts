@@ -222,6 +222,15 @@ export const premiumMessages = pgTable('premium_messages', {
   createdAt: timestamp('created_at').notNull().defaultNow()
 });
 
+export const readerApplications = pgTable('reader_applications', {
+  id: serial('id').primaryKey(),
+  fullName: text('full_name').notNull(),
+  email: text('email').notNull(),
+  experience: text('experience'),
+  status: text('status', { enum: ['pending', 'approved', 'rejected'] }).default('pending'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
 // Client Balance Table
 export const clientBalances = pgTable('client_balances', {
   id: serial('id').primaryKey(),
@@ -315,6 +324,9 @@ export const insertMessageSchema = createInsertSchema(messages)
 
 export const insertGiftSchema = createInsertSchema(gifts)
   .omit({ id: true, createdAt: true, processed: true, processedAt: true });
+
+export const insertReaderApplicationSchema = createInsertSchema(readerApplications)
+  .omit({ id: true, createdAt: true, status: true });
   
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -351,3 +363,6 @@ export type Message = typeof messages.$inferSelect;
 
 export type InsertGift = z.infer<typeof insertGiftSchema>;
 export type Gift = typeof gifts.$inferSelect;
+
+export type InsertReaderApplication = z.infer<typeof insertReaderApplicationSchema>;
+export type ReaderApplication = typeof readerApplications.$inferSelect;

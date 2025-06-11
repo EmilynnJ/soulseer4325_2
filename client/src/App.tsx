@@ -49,13 +49,7 @@ const Help = () => (
   </div>
 );
 
-// Apply component
-const Apply = () => (
-  <div className="container min-h-screen py-8">
-    <h1 className="text-4xl font-alex mb-6">Apply as Reader</h1>
-    <p className="font-playfair">Join our network of gifted psychic readers.</p>
-  </div>
-);
+import ApplyPage from "@/pages/apply-page";
 
 function Router() {
   return (
@@ -83,7 +77,7 @@ function Router() {
         <Route path="/community" component={CommunityPage} />
         <Route path="/help" component={Help} />
         <Route path="/policies" component={PoliciesPage} />
-        <Route path="/apply" component={Apply} />
+        <Route path="/apply" component={ApplyPage} />
         
         {/* Fallback to 404 */}
         <Route component={NotFound} />

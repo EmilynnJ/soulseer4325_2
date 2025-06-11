@@ -22,6 +22,7 @@ const navLinks = [
   { href: PATHS.LIVE, label: "Live" },
   { href: PATHS.SHOP, label: "Shop" },
   { href: PATHS.COMMUNITY, label: "Community" },
+  { href: PATHS.APPLY, label: "Apply" },
   { href: PATHS.MESSAGES, label: "Messages" },
   { href: PATHS.DASHBOARD, label: "Dashboard" },
   { href: PATHS.HELP, label: "Help Center" },

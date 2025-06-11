@@ -1,4 +1,4 @@
-import { users, type User, type InsertUser, type UserUpdate, readings, type Reading, type InsertReading, products, type Product, type InsertProduct, orders, type Order, type InsertOrder, orderItems, type OrderItem, type InsertOrderItem, livestreams, type Livestream, type InsertLivestream, forumPosts, type ForumPost, type InsertForumPost, forumComments, type ForumComment, type InsertForumComment, messages, type Message, type InsertMessage, gifts, type Gift, type InsertGift } from "@shared/schema";
+import { users, type User, type InsertUser, type UserUpdate, readings, type Reading, type InsertReading, products, type Product, type InsertProduct, orders, type Order, type InsertOrder, orderItems, type OrderItem, type InsertOrderItem, livestreams, type Livestream, type InsertLivestream, forumPosts, type ForumPost, type InsertForumPost, forumComments, type ForumComment, type InsertForumComment, messages, type Message, type InsertMessage, gifts, type Gift, type InsertGift, readerApplications, type ReaderApplication, type InsertReaderApplication } from "@shared/schema";
 import session from "express-session";
 import createMemoryStore from "memorystore";
 import connectPgSimple from "connect-pg-simple";
@@ -78,6 +78,10 @@ export interface IStorage {
   getGiftsByRecipient(recipientId: string): Promise<Gift[]>;
   getUnprocessedGifts(): Promise<Gift[]>;
   markGiftAsProcessed(id: number): Promise<Gift | undefined>;
+
+  // Reader applications
+  createReaderApplication(app: InsertReaderApplication): Promise<ReaderApplication>;
+  getReaderApplications(): Promise<ReaderApplication[]>;
   
   // Session store for authentication
   sessionStore: SessionStore;
@@ -720,17 +724,41 @@ export class DatabaseStorage implements IStorage {
     try {
       const now = new Date();
       const [processedGift] = await db.update(gifts)
-        .set({ 
+        .set({
           processed: true,
           processedAt: now
         })
         .where(eq(gifts.id, id))
         .returning();
-        
+
       return processedGift;
     } catch (error) {
       console.error("Error marking gift as processed:", error);
       return undefined;
+    }
+  }
+
+  // Reader application methods
+  async createReaderApplication(app: InsertReaderApplication): Promise<ReaderApplication> {
+    try {
+      const [created] = await db.insert(readerApplications).values({
+        ...app,
+        createdAt: new Date(),
+        status: 'pending'
+      }).returning();
+      return created;
+    } catch (error) {
+      console.error('Error creating reader application:', error);
+      throw error;
+    }
+  }
+
+  async getReaderApplications(): Promise<ReaderApplication[]> {
+    try {
+      return await db.select().from(readerApplications).orderBy(desc(readerApplications.createdAt));
+    } catch (error) {
+      console.error('Error fetching reader applications:', error);
+      return [];
     }
   }
 }
