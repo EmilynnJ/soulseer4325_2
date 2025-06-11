@@ -318,7 +318,7 @@ export class WebRTCService {
         status: 'completed',
         duration: billingData.elapsedSeconds,
         totalPrice: totalCost,
-        endedAt: new Date()
+        completedAt: new Date()
       });
       
       // Process payment from client to reader
@@ -332,7 +332,7 @@ export class WebRTCService {
     this.cleanupRoom(readingId);
   }
 
-  private async processPayment(clientId: number, readerId: number, amount: number) {
+  private async processPayment(clientId: string, readerId: string, amount: number) {
     try {
       // Get client and reader
       const client = await storage.getUser(clientId);
@@ -341,7 +341,7 @@ export class WebRTCService {
       if (!client || !reader) return;
       
       // Check if client has sufficient balance
-      const clientBalance = client.accountBalance || 0;
+      const clientBalance = Number(client.accountBalance) || 0;
       if (clientBalance < amount) {
         console.warn(`Client ${clientId} has insufficient balance for payment: ${clientBalance} < ${amount}`);
         return;
@@ -356,7 +356,7 @@ export class WebRTCService {
       });
       
       // Update reader's balance
-      const readerBalance = reader.accountBalance || 0;
+      const readerBalance = Number(reader.accountBalance) || 0;
       await storage.updateUser(readerId, {
         accountBalance: readerBalance + readerShare
       });

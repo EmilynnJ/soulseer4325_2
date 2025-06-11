@@ -2,13 +2,19 @@ import { pgTable, text, serial, integer, boolean, timestamp, json, unique, real,
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export interface User {
-  id: string;
-  email: string;
-  password: string; // hashed
-  role: 'admin' | 'reader' | 'client';
-  created_at: Date;
-}
+
+export const users = pgTable('users', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  email: text('email').notNull().unique(),
+  hashedPassword: text('hashed_password').notNull(),
+  fullName: text('full_name'),
+  role: text('role').notNull().default('client'),
+  isOnline: boolean('is_online').default(false),
+  accountBalance: numeric('account_balance', { precision: 10, scale: 2 }).default('0'),
+  stripeCustomerId: text('stripe_customer_id'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
 
 export const messages = pgTable("messages", {
   id: serial("id").primaryKey(),

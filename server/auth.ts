@@ -214,16 +214,4 @@ export function setupAuth(app: Express) {
     // Server can optionally maintain a blacklist of tokens if needed.
     res.status(200).json({ message: "Logged out successfully" });
   });
- 
-      // Return the created user
-      const userResponse = { ...user } as SelectUser;
-      delete userResponse.password; // This was for a plain password, not hashed
-      
-      res.status(201).json(userResponse);
-    } catch (error) {
-      console.error('Registration error:', error);
-      res.status(500).json({ message: 'Failed to register user' });
-    }
-  });
-  */
 }
