@@ -1,5 +1,4 @@
 import express from 'express';
-import http from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { config } from 'dotenv';
@@ -7,6 +6,8 @@ import cors from 'cors';
 import session from 'express-session';
 import passport from 'passport';
 import { log } from './vite';
+import { setupAuth } from './auth';
+import { registerRoutes } from './routes';
 // import { initializeAppwrite } from './appwrite-admin'; // Removed Appwrite admin import
 
 // Load environment variables
@@ -21,7 +22,11 @@ const __dirname = path.dirname(__filename);
 
 // Create Express app
 const app = express();
-const server = http.createServer(app);
+// Initialize authentication routes
+setupAuth(app);
+
+// Register application routes and obtain the HTTP server instance
+const server = await registerRoutes(app);
 
 // Middleware
 app.use((req, res, next) => {
