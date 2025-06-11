@@ -214,3 +214,4 @@ export function setupAuth(app: Express) {
     // Server can optionally maintain a blacklist of tokens if needed.
     res.status(200).json({ message: "Logged out successfully" });
   });
+}
