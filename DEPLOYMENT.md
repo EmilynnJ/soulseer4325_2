@@ -22,7 +22,7 @@ SoulSeer uses environment variables for configuration across both client and ser
 | Variable | Description | Used In | Example Value |
 |----------|-------------|---------|--------------|
 | `DATABASE_URL` | PostgreSQL connection string | Server | `postgresql://user:pass@localhost:5432/soulseer` |
-| `PORT` | Server port (defaults to 5000) | Server | `5000` |
+| `PORT` | Server port (defaults to 3000) | Server | `3000` |
 | `NODE_ENV` | Environment mode | Both | `development` or `production` |
 | `SESSION_SECRET` | Secret for session encryption | Server | `random-secure-string` |
 | `STRIPE_SECRET_KEY` | Stripe API secret key | Server | `sk_test_...` |
@@ -31,8 +31,8 @@ SoulSeer uses environment variables for configuration across both client and ser
 | `MUX_TOKEN_ID` | MUX API token ID | Server | `your-mux-token-id` |
 | `MUX_TOKEN_SECRET` | MUX API token secret | Server | `your-mux-token-secret` |
 | `MUX_WEBHOOK_SECRET` | MUX webhook signing secret | Server | `your-mux-webhook-secret` |
-| `VITE_API_URL` | Backend API URL | Client | `http://localhost:5000/api` or production URL |
-| `VITE_WEBSOCKET_URL` | WebSocket server URL | Client | `ws://localhost:5000` or production URL |
+| `VITE_API_URL` | Backend API URL | Client | `http://localhost:3000/api` or production URL |
+| `VITE_WEBSOCKET_URL` | WebSocket server URL | Client | `ws://localhost:3000` or production URL |
 | `VITE_ENABLE_WEBSOCKET` | Enable WebSocket features | Client | `true` or `false` |
 | `VITE_ENABLE_LIVESTREAMS` | Enable livestream features | Client | `true` or `false` |
 | `VITE_ENABLE_CHECKOUT` | Enable payment checkout | Client | `true` or `false` |
