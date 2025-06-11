@@ -689,7 +689,8 @@ export class DatabaseStorage implements IStorage {
       return await db.select().from(gifts)
         .where(eq(gifts.senderId, senderId))
         .orderBy(desc(gifts.createdAt));
-    } catch (error)      console.error("Error getting gifts by sender:", error);
+    } catch (error) {
+      console.error("Error getting gifts by sender:", error);
       return [];
     }
   }
