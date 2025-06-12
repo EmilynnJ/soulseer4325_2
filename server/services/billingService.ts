@@ -1,4 +1,5 @@
 import { neon } from '@neondatabase/serverless';
+import { broadcastToReading } from './signaling';
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -204,7 +205,20 @@ export class BillingService {
         WHERE id = ${sessionId}
       `;
       
-      // TODO: Notify both client and reader about session end
+      const [session] = await sql`
+        SELECT total_minutes, amount_charged
+        FROM rtc_sessions
+        WHERE id = ${sessionId}
+      `;
+
+      broadcastToReading(Number(sessionId), 'billing_ended', {
+        readingId: Number(sessionId),
+        elapsedSeconds: Number(session?.total_minutes || 0) * 60,
+        elapsedMinutes: Number(session?.total_minutes || 0),
+        totalCost: Number(session?.amount_charged || 0) / 100,
+        reason: 'insufficient_funds'
+      });
+
       console.log(`Session ${sessionId} ended due to insufficient funds`);
       
     } catch (error) {
