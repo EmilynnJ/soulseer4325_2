@@ -28,6 +28,15 @@ type RegisterData = {
 
 export const AuthContext = createContext<AuthContextType | null>(null);
 
+/**
+ * Provides authentication state and actions to child components via React context.
+ *
+ * Manages user authentication, including login, registration, logout, JWT token handling, and session persistence. Exposes authentication methods and React Query mutations for use in descendant components.
+ *
+ * @param children - React components that will have access to authentication context.
+ *
+ * @remark Throws errors from authentication actions if login, registration, or logout fail.
+ */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
   const [user, setUser] = useState<User | null>(null);

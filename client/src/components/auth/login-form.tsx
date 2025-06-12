@@ -27,6 +27,11 @@ interface LoginFormProps {
   onSuccess: () => void;
 }
 
+/**
+ * Renders a login form with email and password fields, handling validation and submission.
+ *
+ * On successful login, invokes the provided {@link onSuccess} callback.
+ */
 export function LoginForm({ onSuccess }: LoginFormProps) {
   const { login } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
