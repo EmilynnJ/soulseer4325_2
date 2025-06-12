@@ -1335,8 +1335,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Mark all messages in a conversation as read
   app.post("/api/messages/mark-read", verifyAppwriteToken, async (req, res) => {
     try {
-      const { userId, recipientId } = req.body;
-      await storage.markConversationAsRead(userId, recipientId);
+      const { recipientId } = req.body;
+      await storage.markConversationAsRead(req.user.id, recipientId);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "Failed to mark messages as read" });
