@@ -153,14 +153,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   // React Query mutations for components to consume
-  const loginMutation = useMutation(
-    ({ email, password }: { email: string; password: string }) =>
-      login(email, password)
-  );
+  const loginMutation = useMutation({
+    mutationFn: ({ email, password }: { email: string; password: string }) =>
+      login(email, password),
+    onError: (error: Error) => {
+      toast({
+        title: "Login failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
 
-  const registerMutation = useMutation((data: RegisterData) => register(data));
+  const registerMutation = useMutation({
+    mutationFn: (data: RegisterData) => register(data),
+    onError: (error: Error) => {
+      toast({
+        title: "Registration failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
 
-  const logoutMutation = useMutation(logout);
+  const logoutMutation = useMutation({
+    mutationFn: logout,
+    onError: (error: Error) => {
+      toast({
+        title: "Logout failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
 
   return (
     <AuthContext.Provider
