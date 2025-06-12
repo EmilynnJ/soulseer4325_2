@@ -77,6 +77,7 @@ export interface IStorage {
   markPremiumMessagesRead(receiverId: string, senderId: string): Promise<number>;
   payForPremiumMessage(id: number): Promise<PremiumMessage | undefined>;
   getUnreadPremiumMessageCount(userId: string): Promise<number>;
+
   
   // Gifts for livestreams
   createGift(gift: InsertGift): Promise<Gift>;
@@ -667,80 +668,54 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  // Premium message methods
-  async createPremiumMessage(message: InsertPremiumMessage): Promise<PremiumMessage> {
-    const [created] = await db.insert(premiumMessages).values({
-      ...message,
-      createdAt: new Date(),
-      isPaid: message.isPaid ?? false,
-      isRead: message.isRead ?? false
-    }).returning();
-    return created;
-  }
-
-  async getPremiumMessagesByUsers(userId1: string, userId2: string): Promise<PremiumMessage[]> {
-    return await db.select().from(premiumMessages).where(
-      or(
-        and(eq(premiumMessages.senderId, userId1), eq(premiumMessages.receiverId, userId2)),
-        and(eq(premiumMessages.senderId, userId2), eq(premiumMessages.receiverId, userId1))
-      )
-    ).orderBy(asc(premiumMessages.createdAt));
-  }
-
-  async markPremiumMessagesRead(receiverId: string, senderId: string): Promise<number> {
-    const result = await db.update(premiumMessages)
-      .set({ isRead: true })
-      .where(and(eq(premiumMessages.receiverId, receiverId), eq(premiumMessages.senderId, senderId), eq(premiumMessages.isRead, false)))
-      .returning({ count: sql`count(*)` });
-    return Number(result[0]?.count || 0);
-  }
-
-  async payForPremiumMessage(id: number): Promise<PremiumMessage | undefined> {
-    const [msg] = await db.update(premiumMessages)
-      .set({ isPaid: true })
-      .where(eq(premiumMessages.id, id))
-      .returning();
-    return msg;
-  }
-
-  async getUnreadPremiumMessageCount(userId: string): Promise<number> {
-    const result = await db.select({ count: sql`count(*)` }).from(premiumMessages)
-      .where(and(eq(premiumMessages.receiverId, userId), eq(premiumMessages.isRead, false)));
-    return Number(result[0]?.count || 0);
-  }
-  
-  // Gift methods for livestreams
-  async createGift(gift: InsertGift): Promise<Gift> {
+  async markConversationAsRead(userId: string, otherUserId: string): Promise<void> {
     try {
-      // Calculate the split - 70% to reader, 30% to platform
-      const readerAmount = Math.floor(gift.amount * 0.7);
-      const platformAmount = gift.amount - readerAmount;
-      
-      const [createdGift] = await db.insert(gifts).values({
-        ...gift,
-        readerAmount,
-        platformAmount,
-        processed: false,
-        createdAt: new Date()
-      }).returning();
-      
-      return createdGift;
+      await db.update(messages)
+        .set({ readAt: new Date() })
+        .where(
+          and(
+            eq(messages.receiverId, userId),
+            eq(messages.senderId, otherUserId),
+            isNull(messages.readAt)
+          )
+        );
     } catch (error) {
-      console.error("Error creating gift:", error);
-      throw error;
+      console.error("Error marking conversation as read:", error);
     }
   }
-  
-  async getGiftsByLivestream(livestreamId: number): Promise<Gift[]> {
+
+  async payForMessage(messageId: number, clientId: string): Promise<Message | null> {
     try {
-      return await db.select().from(gifts)
-        .where(eq(gifts.livestreamId, livestreamId))
-        .orderBy(desc(gifts.createdAt));
+      const [message] = await db.select().from(messages).where(eq(messages.id, messageId));
+      if (!message) return null;
+      if (message.receiverId !== clientId) return null;
+      if (message.isPaid && message.readAt) return message;
+
+      const price = message.price || 0;
+      if (price <= 0) return null;
+
+      const client = await this.getUser(clientId);
+      const reader = await this.getUser(message.senderId);
+      if (!client || !reader) return null;
+
+      const clientBalance = Number(client.accountBalance) || 0;
+      if (clientBalance < price) throw new Error('Insufficient balance');
+
+      const readerShare = Math.floor(price * 0.7);
+
+      await this.updateUser(client.id, { accountBalance: clientBalance - price });
+      await this.updateUser(reader.id, { accountBalance: (Number(reader.accountBalance) || 0) + readerShare });
+
+      const [updated] = await db.update(messages)
+        .set({ isPaid: true, readAt: new Date() })
+        .where(eq(messages.id, messageId))
+        .returning();
+
+      return updated;
     } catch (error) {
-      console.error("Error getting gifts by livestream:", error);
-      return [];
+      console.error("Error processing premium message payment:", error);
+      return null;
     }
-  }
   
   async getGiftsBySender(senderId: string): Promise<Gift[]> {
     try {
