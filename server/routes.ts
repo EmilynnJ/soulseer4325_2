@@ -1268,6 +1268,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     async (req, res) => {
       try {
         const { userId, otherId } = req.params;
+        if (req.user.id !== userId && req.user.id !== otherId) {
+          return res.status(403).json({ message: "Unauthorized access to conversation" });
+        }
         const messages = await storage.getMessagesByUsers(userId, otherId);
         res.json(
           messages.map((m) => ({
