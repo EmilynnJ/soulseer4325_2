@@ -70,6 +70,8 @@ export interface IStorage {
   getMessagesByUsers(userId1: string, userId2: string): Promise<Message[]>;
   getUnreadMessageCount(userId: string): Promise<number>;
   markMessageAsRead(id: number): Promise<Message | undefined>; // Message ID is serial
+  markConversationAsRead(userId: string, otherUserId: string): Promise<void>;
+  payForMessage(messageId: number, clientId: string): Promise<Message | null>;
   
   // Gifts for livestreams
   createGift(gift: InsertGift): Promise<Gift>;
@@ -646,11 +648,61 @@ export class DatabaseStorage implements IStorage {
         .set({ readAt: new Date() })
         .where(eq(messages.id, id))
         .returning();
-        
+
       return updatedMessage;
     } catch (error) {
       console.error("Error marking message as read:", error);
       return undefined;
+    }
+  }
+
+  async markConversationAsRead(userId: string, otherUserId: string): Promise<void> {
+    try {
+      await db.update(messages)
+        .set({ readAt: new Date() })
+        .where(
+          and(
+            eq(messages.receiverId, userId),
+            eq(messages.senderId, otherUserId),
+            isNull(messages.readAt)
+          )
+        );
+    } catch (error) {
+      console.error("Error marking conversation as read:", error);
+    }
+  }
+
+  async payForMessage(messageId: number, clientId: string): Promise<Message | null> {
+    try {
+      const [message] = await db.select().from(messages).where(eq(messages.id, messageId));
+      if (!message) return null;
+      if (message.receiverId !== clientId) return null;
+      if (message.isPaid && message.readAt) return message;
+
+      const price = message.price || 0;
+      if (price <= 0) return null;
+
+      const client = await this.getUser(clientId);
+      const reader = await this.getUser(message.senderId);
+      if (!client || !reader) return null;
+
+      const clientBalance = Number(client.accountBalance) || 0;
+      if (clientBalance < price) throw new Error('Insufficient balance');
+
+      const readerShare = Math.floor(price * 0.7);
+
+      await this.updateUser(client.id, { accountBalance: clientBalance - price });
+      await this.updateUser(reader.id, { accountBalance: (Number(reader.accountBalance) || 0) + readerShare });
+
+      const [updated] = await db.update(messages)
+        .set({ isPaid: true, readAt: new Date() })
+        .where(eq(messages.id, messageId))
+        .returning();
+
+      return updated;
+    } catch (error) {
+      console.error("Error processing premium message payment:", error);
+      return null;
     }
   }
   
