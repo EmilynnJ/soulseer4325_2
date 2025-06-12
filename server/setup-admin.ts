@@ -1,45 +1,34 @@
-import { Client, Account, Teams } from 'appwrite';
+import { config } from 'dotenv';
+import { storage } from './storage';
+import { hashPassword } from './auth';
 
-const client = new Client()
-    .setEndpoint('https://nyc.cloud.appwrite.io/v1')
-    .setProject('681831b30038fbc171cf');
-
-const account = new Account(client);
-const teams = new Teams(client);
+// Load environment variables so DATABASE_URL and other values are available
+config();
 
 async function setupAdmin() {
-    try {
-        // Create admin account
-        const user = await account.create(
-            'unique()', // User ID will be auto-generated
-            'emilynnj14@gmail.com',
-            'JayJas1423!',
-            'Emily' // Name
-        );
+  const email = process.env.ADMIN_EMAIL || 'admin@example.com';
+  const password = process.env.ADMIN_PASSWORD || 'changeMe123';
+  const fullName = process.env.ADMIN_NAME || 'Admin';
 
-        console.log('Admin account created:', user);
+  const existing = await storage.getUserByEmail(email);
+  if (existing) {
+    console.log('Admin user already exists');
+    return;
+  }
 
-        // Create admin team if it doesn't exist
-        try {
-            const adminTeam = await teams.create('admin', 'Admin Team');
-            console.log('Admin team created:', adminTeam);
-
-            // Add user to admin team
-            await teams.createMembership(
-                adminTeam.$id,
-                ['admin'], // Roles
-                'https://nyc.cloud.appwrite.io/v1/account/verification', // URL for email verification
-                user.$id
-            );
-            console.log('User added to admin team');
-        } catch (error) {
-            console.log('Admin team already exists or error:', error);
-        }
-
-        console.log('Admin setup completed successfully');
-    } catch (error) {
-        console.error('Error setting up admin:', error);
-    }
+  const hashedPassword = await hashPassword(password);
+  const user = await storage.createUser({
+    email,
+    hashedPassword,
+    fullName,
+    role: 'admin'
+  });
+  console.log(`Admin user created: ${user.email}`);
 }
 
-setupAdmin(); 
+setupAdmin()
+  .then(() => process.exit(0))
+  .catch(err => {
+    console.error('Error creating admin user:', err);
+    process.exit(1);
+  });

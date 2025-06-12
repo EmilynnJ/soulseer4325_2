@@ -47,7 +47,7 @@
   body {
     @apply bg-background text-foreground;
     font-family: 'Playfair Display', serif;
-    background-image: url('/background-image.png');
+    background-image: url('https://i.postimg.cc/sXdsKGTK/DALL-E-2025-06-06-14-36-29-A-vivid-ethereal-background-image-designed-for-a-psychic-reading-app.webp');
     background-size: cover;
     background-attachment: fixed;
     background-position: center;

@@ -10,9 +10,9 @@ export function FounderSection() {
       
       <div className="mb-8">
         <Avatar className="w-48 h-48 border-4 border-secondary glow-circle">
-          <AvatarImage 
-            src="/images/founder.jpg" 
-            alt="Emily" 
+          <AvatarImage
+            src="https://i.postimg.cc/s2ds9RtC/FOUNDER.jpg"
+            alt="Emily"
             className="object-cover"
           />
           <AvatarFallback className="bg-accent text-white text-4xl">

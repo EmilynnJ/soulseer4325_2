@@ -17,9 +17,9 @@ export function HeroSection() {
         
         {/* Hero image between header and tagline */}
         <div className="flex justify-center mb-4">
-          <img 
-            src="/assets/images/soul-seer-logo.jpg" 
-            alt="SoulSeer Logo" 
+          <img
+            src="https://i.postimg.cc/tRLSgCPb/HERO-IMAGE-1.jpg"
+            alt="SoulSeer Hero"
             className="w-48 md:w-60 rounded-full border-2 border-accent/40 shadow-glow"
           />
         </div>

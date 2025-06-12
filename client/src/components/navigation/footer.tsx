@@ -105,6 +105,14 @@ export function Footer() {
               </li>
               <li>
                 <Link
+                  href={PATHS.APPLY}
+                  className="text-light/70 hover:text-accent transition duration-300"
+                >
+                  Apply
+                </Link>
+              </li>
+              <li>
+                <Link
                   href={PATHS.ABOUT}
                   className="text-light/70 hover:text-accent transition duration-300"
                 >

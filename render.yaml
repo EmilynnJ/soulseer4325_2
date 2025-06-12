@@ -24,9 +24,12 @@ services:
         value: relay1.expressturn.com:3480
       - key: WEBRTC_TURN_SERVERS_PASSWORD
         value: M5zys3Dh++iwdoCz4xJF3SWHS2M=
-      - key: APPWRITE_ENDPOINT
-        value: https://nyc.cloud.appwrite.io/v1
-      - key: APPWRITE_PROJECT_ID
-        value: 681831b30038fbc171cf
-      - key: APPWRITE_API_SECRET
-        value: standard_31cbb4cd916d4b64842d4241add0e5f83ef8e030128be966f6bcb0ec59219a11121b8f027c60bb5da16167650b1076ad762809563804448d39c38ce85a5e0e2dbf5de2dc209988170a12c40037b9fea2527c8556ae1b287c7e66a165df8f2bd32f220280e6537bd16c8e357bec3f539490ad27632f8ffa3fd7b4a19dabe384df
+      - key: JWT_SECRET
+        sync: false # This should be set directly in Render's secret management
+      # Appwrite related environment variables removed
+      # - key: APPWRITE_ENDPOINT
+      #   value: https://nyc.cloud.appwrite.io/v1
+      # - key: APPWRITE_PROJECT_ID
+      #   value: 681831b30038fbc171cf
+      # - key: APPWRITE_API_SECRET
+      #   value: standard_31cbb4cd916d4b64842d4241add0e5f83ef8e030128be966f6bcb0ec59219a11121b8f027c60bb5da16167650b1076ad762809563804448d39c38ce85a5e0e2dbf5de2dc209988170a12c40037b9fea2527c8556ae1b287c7e66a165df8f2bd32f220280e6537bd16c8e357bec3f539490ad27632f8ffa3fd7b4a19dabe384df

@@ -1,5 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
-import { account } from "./appwrite";
+// import { account } from "./appwrite"; // Appwrite import removed
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -13,14 +13,7 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
-  // Get the current user's JWT token from Appwrite
-  let token = null;
-  try {
-    const jwt = await account.createJWT();
-    token = jwt.jwt;
-  } catch (error) {
-    console.log('No active Appwrite session');
-  }
+  const token = localStorage.getItem('authToken');
   
   // Prepare headers
   const headers: Record<string, string> = {};
@@ -47,14 +40,7 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    // Get the current user's JWT token from Appwrite
-    let token = null;
-    try {
-      const jwt = await account.createJWT();
-      token = jwt.jwt;
-    } catch (error) {
-      console.log('No active Appwrite session');
-    }
+    const token = localStorage.getItem('authToken');
     
     // Prepare headers
     const headers: Record<string, string> = {};

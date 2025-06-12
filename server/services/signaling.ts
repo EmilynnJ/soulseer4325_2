@@ -314,7 +314,7 @@ function handleEndCall(socket: Socket, data: { readingId: number, userId: number
  * @param event The event name
  * @param data The event data
  */
-function broadcastToReading(readingId: number, event: string, data: any): void {
+export function broadcastToReading(readingId: number, event: string, data: any): void {
   try {
     if (!io) {
       throw new Error('Signaling service not initialized');

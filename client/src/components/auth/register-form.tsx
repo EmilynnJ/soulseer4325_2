@@ -2,6 +2,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useAuth } from "@/hooks/use-auth";
+import { useState } from "react";
 import { CelestialButton } from "@/components/ui/celestial-button";
 import { Input } from "@/components/ui/input";
 import { Loader2 } from "lucide-react";
@@ -23,7 +24,6 @@ import {
 import { GlowCard } from "@/components/ui/glow-card";
 
 const registerSchema = z.object({
-  username: z.string().min(3, "Username must be at least 3 characters"),
   email: z.string().email("Please enter a valid email address"),
   password: z.string()
     .min(8, "Password must be at least 8 characters")
@@ -41,12 +41,12 @@ interface RegisterFormProps {
 }
 
 export function RegisterForm({ onSuccess }: RegisterFormProps) {
-  const { registerMutation } = useAuth();
+  const { register: registerUser } = useAuth();
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
-      username: "",
       email: "",
       password: "",
       fullName: "",
@@ -55,8 +55,18 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
   });
 
   async function onSubmit(data: RegisterFormValues) {
-    await registerMutation.mutateAsync(data);
-    onSuccess();
+    setIsSubmitting(true);
+    try {
+      await registerUser({
+        email: data.email,
+        password: data.password,
+        fullName: data.fullName,
+        role: data.role,
+      });
+      onSuccess();
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -83,23 +93,6 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
             )}
           />
 
-          <FormField
-            control={form.control}
-            name="username"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel className="text-light font-playfair">Username</FormLabel>
-                <FormControl>
-                  <Input
-                    placeholder="Choose a unique username"
-                    {...field}
-                    className="bg-primary-light/30 border-accent-gold/30 font-playfair text-gray-800"
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
 
           <FormField
             control={form.control}
@@ -166,9 +159,9 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
               type="submit"
               variant="primary"
               className="w-full"
-              disabled={registerMutation.isPending}
+              disabled={isSubmitting}
             >
-              {registerMutation.isPending ? (
+              {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Creating account...

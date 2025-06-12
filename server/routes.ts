@@ -1,7 +1,8 @@
+import authRoutes from './routes/authRoutes';
+import notificationRoutes from './routes/notificationRoutes';
 import express, { type Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { verifyAppwriteToken } from "./auth";
 import { z } from "zod";
 import { UserUpdate, Reading } from "@shared/schema";
 import { db } from "./db";
@@ -13,10 +14,11 @@ import { promisify } from "util";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { initializeWebSocketServer, notifyNewGift } from "./websocket";
 
 // Admin middleware
 const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
-  if (!req.isAuthenticated()) {
+  if (!req.user) {
     return res.status(401).json({ message: "Not authenticated" });
   }
   
@@ -99,10 +101,15 @@ async function processCompletedReadingPayment(
 export async function registerRoutes(app: Express): Promise<Server> {
   // Create HTTP server
   const httpServer = createServer(app);
-  
+
+  // Initialize WebSocket server for livestream chat and gifting
+  initializeWebSocketServer(httpServer);
+
   // Webhook endpoints removed
-  
+
   // API Routes
+  app.use('/api/auth', authRoutes);
+  app.use('/api/notifications', notificationRoutes);
   
   // Readers
   app.get("/api/readers", async (req, res) => {
@@ -771,6 +778,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to fetch order" });
     }
   });
+
+  // Reader Applications
+  app.post("/api/applications", async (req, res) => {
+    try {
+      const appData = req.body;
+      if (!appData.fullName || !appData.email) {
+        return res.status(400).json({ message: "Missing fields" });
+      }
+      const application = await storage.createReaderApplication({
+        fullName: appData.fullName,
+        email: appData.email,
+        experience: appData.experience || null,
+      });
+      res.status(201).json(application);
+    } catch (error) {
+      console.error('Error creating application:', error);
+      res.status(500).json({ message: 'Failed to submit application' });
+    }
+  });
   
   // Livestreams
   app.get("/api/livestreams", async (req, res) => {
@@ -919,7 +945,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.updateUser(giftData.recipientId, {
         accountBalance: (recipient.accountBalance || 0) + readerAmount
       });
-      
+
+      // Broadcast the new gift to livestream viewers
+      const senderUsername = sender.username || `User #${userId}`;
+      const recipientUsername = recipient.username || `User #${giftData.recipientId}`;
+      notifyNewGift(gift, senderUsername, recipientUsername);
+
       res.status(201).json(gift);
     } catch (error) {
       console.error("Failed to create gift:", error);
@@ -1223,6 +1254,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Messages
+  // Legacy endpoint to fetch messages between two users
   app.get("/api/messages/:userId", verifyAppwriteToken, async (req, res) => {
     try {
       const userId = parseInt(req.params.userId);
@@ -1236,7 +1268,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to fetch messages" });
     }
   });
+
+  // Get conversation between two users (explicit)
+  app.get(
+    "/api/messages/conversation/:userId/:otherId",
+    verifyAppwriteToken,
+    async (req, res) => {
+      try {
+        const { userId, otherId } = req.params;
+        if (req.user.id !== userId && req.user.id !== otherId) {
+          return res.status(403).json({ message: "Unauthorized access to conversation" });
+        }
+        const messages = await storage.getMessagesByUsers(userId, otherId);
+        res.json(
+          messages.map((m) => ({
+            id: m.id,
+            senderId: m.senderId,
+            receiverId: m.receiverId,
+            content: m.content,
+            isPaid: m.isPaid,
+            price: m.price,
+            isRead: m.readAt !== null,
+            timestamp: m.createdAt,
+          }))
+        );
+      } catch (error) {
+        res.status(500).json({ message: "Failed to fetch messages" });
+      }
+    }
+  );
   
+  // Legacy send message endpoint
   app.post("/api/messages", verifyAppwriteToken, async (req, res) => {
     try {
       const messageData = req.body;
@@ -1254,7 +1316,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to send message" });
     }
   });
-  
+
+  // Alternate send endpoint used by premium messaging component
+  app.post("/api/messages/send", verifyAppwriteToken, async (req, res) => {
+    try {
+      const { receiverId, content, isPaid, price } = req.body;
+      const message = await storage.createMessage({
+        senderId: req.user.id,
+        receiverId,
+        content,
+        isPaid: !!isPaid,
+        price: price ?? null,
+      });
+      res.status(201).json({
+        id: message.id,
+        senderId: message.senderId,
+        receiverId: message.receiverId,
+        content: message.content,
+        isPaid: message.isPaid,
+        price: message.price,
+        isRead: message.readAt !== null,
+        timestamp: message.createdAt,
+      });
+    } catch (error) {
+      console.error("Failed to send premium message:", error);
+      res.status(500).json({ message: "Failed to send message" });
+    }
+  });
+
+  // Mark all messages in a conversation as read
+  app.post("/api/messages/mark-read", verifyAppwriteToken, async (req, res) => {
+    try {
+      const { recipientId } = req.body;
+      await storage.markConversationAsRead(req.user.id, recipientId);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to mark messages as read" });
+    }
+  });
+
+  // Pay for a premium message
+  app.post("/api/messages/:id/pay", verifyAppwriteToken, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "Invalid message ID" });
+      }
+
+      const updated = await storage.payForMessage(id, req.user.id);
+      if (!updated) {
+        return res.status(400).json({ message: "Unable to process payment" });
+      }
+
+      res.json({
+        id: updated.id,
+        senderId: updated.senderId,
+        receiverId: updated.receiverId,
+        content: updated.content,
+        isPaid: updated.isPaid,
+        price: updated.price,
+        isRead: updated.readAt !== null,
+        timestamp: updated.createdAt,
+      });
+    } catch (error: any) {
+      console.error("Failed to pay for message:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.patch("/api/messages/:id/read", verifyAppwriteToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -1279,6 +1408,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ count });
     } catch (error) {
       res.status(500).json({ message: "Failed to get unread message count" });
+    }
+  });
+
+  // Premium messaging endpoints used by the client UI
+  app.get("/api/messages/:userId/:recipientId", verifyAppwriteToken, async (req, res) => {
+    try {
+      const { userId, recipientId } = req.params;
+      const messages = await storage.getPremiumMessagesByUsers(userId, recipientId);
+      res.json(messages);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch messages" });
+    }
+  });
+
+  app.post("/api/messages/send", verifyAppwriteToken, async (req, res) => {
+    try {
+      const { receiverId, content, isPaid, price } = req.body;
+      const message = await storage.createPremiumMessage({
+        senderId: req.user.id,
+        receiverId,
+        message: content,
+        isPaid: Boolean(isPaid),
+        price: price ?? null,
+      });
+      res.status(201).json(message);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to send message" });
+    }
+  });
+
+  app.post("/api/messages/mark-read", verifyAppwriteToken, async (req, res) => {
+    try {
+      const { userId, recipientId } = req.body;
+      await storage.markPremiumMessagesRead(userId, recipientId);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to mark messages as read" });
+    }
+  });
+
+  app.post("/api/messages/:id/pay", verifyAppwriteToken, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid message id" });
+
+      const message = await storage.payForPremiumMessage(id);
+      if (!message) return res.status(404).json({ message: "Message not found" });
+
+      // Deduct balance from payer and credit sender
+      if (message.price && message.receiverId === req.user.id) {
+        const amount = Number(message.price);
+        const payer = await storage.getUser(req.user.id);
+        const sender = await storage.getUser(message.senderId);
+        if (payer && sender) {
+          await storage.updateUser(payer.id, { accountBalance: (Number(payer.accountBalance)||0) - amount });
+          const credit = Math.floor(amount * 0.7);
+          await storage.updateUser(sender.id, { accountBalance: (Number(sender.accountBalance)||0) + credit });
+        }
+      }
+
+      res.json(message);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to process payment" });
     }
   });
 

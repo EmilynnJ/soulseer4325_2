@@ -2,17 +2,21 @@ import { createContext, ReactNode, useContext, useEffect, useState } from "react
 import { User } from "@shared/schema";
 import { apiRequest, queryClient } from "../lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { account, ID } from "../lib/appwrite";
+import { useMutation, type UseMutationResult } from "@tanstack/react-query";
+// import { account, ID } from "../lib/appwrite"; // Appwrite import removed
 
 type AuthContextType = {
   user: User | null;
-  appwriteUser: any | null;
-  idToken: string | null;
+  // appwriteUser: any | null; // Removed
+  idToken: string | null; // This can represent the JWT token itself
   isLoading: boolean;
   error: Error | null;
   login: (email: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
   register: (userData: RegisterData) => Promise<User>;
+  loginMutation: UseMutationResult<User, Error, { email: string; password: string }>;
+  registerMutation: UseMutationResult<User, Error, RegisterData>;
+  logoutMutation: UseMutationResult<void, Error, void>;
 };
 
 type RegisterData = {
@@ -27,48 +31,33 @@ export const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
   const [user, setUser] = useState<User | null>(null);
-  const [appwriteUser, setAppwriteUser] = useState<any | null>(null);
-  const [idToken, setIdToken] = useState<string | null>(null);
+  // const [appwriteUser, setAppwriteUser] = useState<any | null>(null); // Removed
+  const [idToken, setIdToken] = useState<string | null>(null); // Represents JWT
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
 
-  // Check for Appwrite session on mount
   useEffect(() => {
     const checkSession = async () => {
       setIsLoading(true);
-      try {
-        // Get current session
-        const session = await account.getSession('current');
-        if (session) {
-          // Get current user
-          const awUser = await account.get();
-          setAppwriteUser(awUser);
-          
-          // Get JWT token for API requests
-          const jwt = await account.createJWT();
-          setIdToken(jwt.jwt);
-          
-          // Fetch the user profile from our API
+      const storedToken = localStorage.getItem('authToken');
+      if (storedToken) {
+        setIdToken(storedToken); // Set idToken so apiRequest can use it if needed immediately
+        try {
+          // apiRequest will now use localStorage token
           const res = await apiRequest("GET", "/api/user");
           const userData = await res.json();
           setUser(userData);
-        } else {
-          setIdToken(null);
-          setAppwriteUser(null);
+        } catch (err) {
+          // If token is invalid (e.g., expired, server returns 401)
+          // Call a simplified logout to clear state and token
+          localStorage.removeItem('authToken');
           setUser(null);
-        }
-      } catch (err) {
-        // If error is 401 Unauthorized, user is not logged in
-        if (err instanceof Error && err.message.includes('401')) {
           setIdToken(null);
-          setAppwriteUser(null);
-          setUser(null);
-        } else {
           setError(err instanceof Error ? err : new Error(String(err)));
+          console.error("Session check failed, logging out:", err);
         }
-      } finally {
-        setIsLoading(false);
       }
+      setIsLoading(false);
     };
 
     checkSession();
@@ -76,27 +65,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string): Promise<User> => {
     try {
-      // Login with Appwrite
-      const session = await account.createEmailSession(email, password);
+      const res = await apiRequest("POST", "/api/auth/login", { email, password });
+      const { token, user: userData } = await res.json();
       
-      // Get current user
-      const awUser = await account.get();
-      setAppwriteUser(awUser);
-      
-      // Get JWT token for API requests
-      const jwt = await account.createJWT();
-      setIdToken(jwt.jwt);
-      
-      // Fetch user profile
-      const res = await apiRequest("GET", "/api/user");
-      const userData = await res.json();
+      localStorage.setItem('authToken', token);
+      setIdToken(token);
       setUser(userData);
       
+      queryClient.setQueryData(['user'], userData); // Update react-query cache if you use it for user
+
       toast({
         title: "Welcome back!",
         description: `You're now logged in as ${userData.fullName}`,
       });
-      
       return userData;
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
@@ -111,39 +92,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = async (userData: RegisterData): Promise<User> => {
     try {
-      // Create Appwrite user
-      const awUser = await account.create(
-        ID.unique(),
-        userData.email,
-        userData.password,
-        userData.fullName
-      );
-      
-      // Login after registration
-      await account.createEmailSession(userData.email, userData.password);
-      setAppwriteUser(awUser);
-      
-      // Get JWT token for API requests
-      const jwt = await account.createJWT();
-      setIdToken(jwt.jwt);
-      
-      // Create user profile in our backend
-      const res = await apiRequest("POST", "/api/register", {
+      // First, register the user
+      const registerRes = await apiRequest("POST", "/api/auth/register", {
         fullName: userData.fullName,
         email: userData.email,
+        password: userData.password, // Send plain password to register endpoint
         role: userData.role || "client",
-        appwriteUid: awUser.$id
       });
+      const registeredUser = await registerRes.json();
+
+      // After successful registration, log the user in to get a token
+      // Note: this calls the updated login function from this hook
+      await login(userData.email, userData.password);
       
-      const createdUser = await res.json();
-      setUser(createdUser);
-      
+      // setUser is handled by the login function
+      // setIdToken is handled by the login function
+      // localStorage is handled by the login function
+
       toast({
         title: "Registration successful!",
-        description: `Welcome to SoulSeer, ${createdUser.fullName}`,
+        description: `Welcome to SoulSeer, ${registeredUser.fullName}`,
       });
       
-      return createdUser;
+      return registeredUser; // Or return the user from login() if preferred
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       toast({
@@ -157,14 +128,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async (): Promise<void> => {
     try {
-      // Delete all sessions
-      await account.deleteSessions();
+      // Optional: Call backend logout endpoint if it does anything useful
+      // await apiRequest("POST", "/api/auth/logout");
+
+      localStorage.removeItem('authToken');
       setIdToken(null);
-      setAppwriteUser(null);
       setUser(null);
       
-      // Clear any cached data
-      queryClient.clear();
+      queryClient.clear(); // Clear all react-query cache on logout
       
       toast({
         title: "Logged out",
@@ -181,17 +152,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // React Query mutations for components to consume
+  const loginMutation = useMutation({
+    mutationFn: ({ email, password }: { email: string; password: string }) =>
+      login(email, password),
+    onError: (error: Error) => {
+      toast({
+        title: "Login failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const registerMutation = useMutation({
+    mutationFn: (data: RegisterData) => register(data),
+    onError: (error: Error) => {
+      toast({
+        title: "Registration failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const logoutMutation = useMutation({
+    mutationFn: logout,
+    onError: (error: Error) => {
+      toast({
+        title: "Logout failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   return (
     <AuthContext.Provider
       value={{
         user,
-        appwriteUser,
+        // appwriteUser, // Removed
         idToken,
         isLoading,
         error,
         login,
         logout,
         register,
+        loginMutation,
+        registerMutation,
+        logoutMutation,
       }}
     >
       {children}

@@ -2,36 +2,24 @@ import { pgTable, text, serial, integer, boolean, timestamp, json, unique, real,
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export const users = pgTable("users", {
-  id: serial("id").primaryKey(),
-  username: text("username").notNull().unique(),
-  password: text("password").notNull(),
-  email: text("email").notNull().unique(),
-  fullName: text("full_name").notNull(),
-  profileImage: text("profile_image"),
-  role: text("role", { enum: ["client", "reader", "admin"] }).notNull().default("client"),
-  bio: text("bio"),
-  specialties: text("specialties").array(),
-  pricing: integer("pricing"), // Legacy field - base price per minute in cents
-  pricingChat: integer("pricing_chat"), // Chat price per minute in cents
-  pricingVoice: integer("pricing_voice"), // Voice/phone price per minute in cents
-  pricingVideo: integer("pricing_video"), // Video price per minute in cents
-  rating: integer("rating"),
-  reviewCount: integer("review_count").default(0),
-  verified: boolean("verified").default(false),
-  accountBalance: integer("account_balance").default(0), // Account balance in cents
-  createdAt: timestamp("created_at").defaultNow(),
-  lastActive: timestamp("last_active").defaultNow(),
-  isOnline: boolean("is_online").default(false),
-  // No longer using Square - only Stripe
-  // stripeCustomerId field already exists
-  stripeCustomerId: text("stripe_customer_id"), // Stripe customer ID for payment processing
+
+export const users = pgTable('users', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  email: text('email').notNull().unique(),
+  hashedPassword: text('hashed_password').notNull(),
+  fullName: text('full_name'),
+  role: text('role').notNull().default('client'),
+  isOnline: boolean('is_online').default(false),
+  accountBalance: numeric('account_balance', { precision: 10, scale: 2 }).default('0'),
+  stripeCustomerId: text('stripe_customer_id'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
 });
 
 export const messages = pgTable("messages", {
   id: serial("id").primaryKey(),
-  senderId: integer("sender_id").notNull().references(() => users.id),
-  receiverId: integer("receiver_id").notNull().references(() => users.id),
+  senderId: uuid("sender_id").notNull().references(() => users.id),
+  receiverId: uuid("receiver_id").notNull().references(() => users.id),
   content: text("content").notNull(),
   isPaid: boolean("is_paid").default(false),
   price: integer("price"),
@@ -41,8 +29,8 @@ export const messages = pgTable("messages", {
 
 export const readings = pgTable("readings", {
   id: serial("id").primaryKey(),
-  readerId: integer("reader_id").notNull().references(() => users.id),
-  clientId: integer("client_id").notNull().references(() => users.id),
+  readerId: uuid("reader_id").notNull().references(() => users.id),
+  clientId: uuid("client_id").notNull().references(() => users.id),
   status: text("status", { enum: ["scheduled", "waiting_payment", "payment_completed", "in_progress", "completed", "cancelled"] }).notNull(),
   type: text("type", { enum: ["chat", "video", "voice"] }).notNull(),
   readingMode: text("reading_mode", { enum: ["scheduled", "on_demand"] }).notNull(),
@@ -79,7 +67,7 @@ export const products = pgTable("products", {
 
 export const orders = pgTable("orders", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
+  userId: uuid("user_id").notNull().references(() => users.id),
   status: text("status", { enum: ["pending", "processing", "shipped", "delivered", "cancelled"] }).notNull(),
   total: integer("total").notNull(), // in cents
   shippingAddress: json("shipping_address").notNull(),
@@ -99,7 +87,7 @@ export const orderItems = pgTable("order_items", {
 
 export const livestreams = pgTable("livestreams", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
+  userId: uuid("user_id").notNull().references(() => users.id),
   title: text("title").notNull(),
   description: text("description").notNull(),
   thumbnailUrl: text("thumbnail_url"),
@@ -118,7 +106,7 @@ export const livestreams = pgTable("livestreams", {
 
 export const forumPosts = pgTable("forum_posts", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
+  userId: uuid("user_id").notNull().references(() => users.id),
   title: text("title").notNull(),
   content: text("content").notNull(),
   category: text("category").notNull(),
@@ -130,7 +118,7 @@ export const forumPosts = pgTable("forum_posts", {
 
 export const forumComments = pgTable("forum_comments", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => users.id),
+  userId: uuid("user_id").notNull().references(() => users.id),
   postId: integer("post_id").notNull().references(() => forumPosts.id),
   content: text("content").notNull(),
   likes: integer("likes").default(0),
@@ -140,8 +128,8 @@ export const forumComments = pgTable("forum_comments", {
 
 export const gifts = pgTable("gifts", {
   id: serial("id").primaryKey(),
-  senderId: integer("sender_id").notNull().references(() => users.id),
-  recipientId: integer("recipient_id").notNull().references(() => users.id),
+  senderId: uuid("sender_id").notNull().references(() => users.id),
+  recipientId: uuid("recipient_id").notNull().references(() => users.id),
   livestreamId: integer("livestream_id").references(() => livestreams.id),
   amount: integer("amount").notNull(), // Amount in cents
   giftType: text("gift_type", { 
@@ -160,8 +148,8 @@ export const gifts = pgTable("gifts", {
 export const rtcSessions = pgTable('rtc_sessions', {
   id: serial('id').primaryKey(),
   sessionId: uuid('session_id').notNull().unique(),
-  readerId: integer('reader_id').references(() => users.id).notNull(),
-  clientId: integer('client_id').references(() => users.id).notNull(),
+  readerId: uuid('reader_id').references(() => users.id).notNull(),
+  clientId: uuid('client_id').references(() => users.id).notNull(),
   sessionType: text('session_type', { enum: ['chat', 'audio', 'video'] }).notNull(),
   startTime: timestamp('start_time').notNull(),
   endTime: timestamp('end_time'),
@@ -179,7 +167,7 @@ export const rtcSessions = pgTable('rtc_sessions', {
 // Reader Rates Table
 export const readerRates = pgTable('reader_rates', {
   id: serial('id').primaryKey(),
-  readerId: integer('reader_id').references(() => users.id).notNull(),
+  readerId: uuid('reader_id').references(() => users.id).notNull(),
   chatRate: numeric('chat_rate', { precision: 10, scale: 2 }).notNull(),
   audioRate: numeric('audio_rate', { precision: 10, scale: 2 }).notNull(),
   videoRate: numeric('video_rate', { precision: 10, scale: 2 }).notNull(),
@@ -198,7 +186,7 @@ export const readerRates = pgTable('reader_rates', {
 export const liveStreams = pgTable('live_streams', {
   id: serial('id').primaryKey(),
   streamId: uuid('stream_id').notNull().unique(),
-  readerId: integer('reader_id').references(() => users.id).notNull(),
+  readerId: uuid('reader_id').references(() => users.id).notNull(),
   title: text('title').notNull(),
   description: text('description'),
   startTime: timestamp('start_time'),
@@ -213,8 +201,8 @@ export const liveStreams = pgTable('live_streams', {
 // Gifts Table
 export const liveGifts = pgTable('gifts', {
   id: serial('id').primaryKey(),
-  senderId: integer('sender_id').references(() => users.id).notNull(),
-  receiverId: integer('receiver_id').references(() => users.id).notNull(),
+  senderId: uuid('sender_id').references(() => users.id).notNull(),
+  receiverId: uuid('receiver_id').references(() => users.id).notNull(),
   liveStreamId: integer('live_stream_id').references(() => liveStreams.id),
   amount: numeric('amount', { precision: 10, scale: 2 }).notNull(),
   message: text('message'),
@@ -225,8 +213,8 @@ export const liveGifts = pgTable('gifts', {
 // Premium Messages Table
 export const premiumMessages = pgTable('premium_messages', {
   id: serial('id').primaryKey(),
-  senderId: integer('sender_id').references(() => users.id).notNull(),
-  receiverId: integer('receiver_id').references(() => users.id).notNull(),
+  senderId: uuid('sender_id').references(() => users.id).notNull(),
+  receiverId: uuid('receiver_id').references(() => users.id).notNull(),
   message: text('message').notNull(),
   price: numeric('price', { precision: 10, scale: 2 }),
   isPaid: boolean('is_paid').notNull().default(false),
@@ -234,10 +222,19 @@ export const premiumMessages = pgTable('premium_messages', {
   createdAt: timestamp('created_at').notNull().defaultNow()
 });
 
+export const readerApplications = pgTable('reader_applications', {
+  id: serial('id').primaryKey(),
+  fullName: text('full_name').notNull(),
+  email: text('email').notNull(),
+  experience: text('experience'),
+  status: text('status', { enum: ['pending', 'approved', 'rejected'] }).default('pending'),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
 // Client Balance Table
 export const clientBalances = pgTable('client_balances', {
   id: serial('id').primaryKey(),
-  clientId: integer('client_id').references(() => users.id).notNull(),
+  clientId: uuid('client_id').references(() => users.id).notNull(),
   balance: numeric('balance', { precision: 10, scale: 2 }).notNull().default('0'),
   updatedAt: timestamp('updated_at').notNull().defaultNow()
 });
@@ -245,7 +242,7 @@ export const clientBalances = pgTable('client_balances', {
 // Reader Availability Table
 export const readerAvailability = pgTable('reader_availability', {
   id: serial('id').primaryKey(),
-  readerId: integer('reader_id').references(() => users.id).notNull(),
+  readerId: uuid('reader_id').references(() => users.id).notNull(),
   isOnline: boolean('is_online').notNull().default(false),
   lastOnlineTime: timestamp('last_online_time'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -255,7 +252,7 @@ export const readerAvailability = pgTable('reader_availability', {
 // Notifications Table
 export const notifications = pgTable('notifications', {
   id: serial('id').primaryKey(),
-  userId: integer('user_id').references(() => users.id).notNull(),
+  userId: uuid('user_id').references(() => users.id).notNull(),
   type: text('type', { 
     enum: ['new_session_request', 'session_accepted', 'session_cancelled', 'payment_received', 'new_message']
   }).notNull(),
@@ -269,7 +266,7 @@ export const notifications = pgTable('notifications', {
 // Insert Schemas
 
 export const insertUserSchema = createInsertSchema(users)
-  .omit({ id: true, createdAt: true, lastActive: true, isOnline: true, reviewCount: true });
+  .omit({ id: true, createdAt: true, updatedAt: true });
 
 export const insertReadingSchema = createInsertSchema(readings)
   .omit({ 
@@ -325,18 +322,25 @@ export const insertForumCommentSchema = createInsertSchema(forumComments)
 export const insertMessageSchema = createInsertSchema(messages)
   .omit({ id: true, createdAt: true, readAt: true });
 
+export const insertPremiumMessageSchema = createInsertSchema(premiumMessages)
+  .omit({ id: true, createdAt: true, isRead: true, isPaid: true });
+
 export const insertGiftSchema = createInsertSchema(gifts)
   .omit({ id: true, createdAt: true, processed: true, processedAt: true });
+
+export const insertReaderApplicationSchema = createInsertSchema(readerApplications)
+  .omit({ id: true, createdAt: true, status: true });
+
+export const insertNotificationSchema = createInsertSchema(notifications)
+  .omit({ id: true, createdAt: true, isRead: true });
   
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type UserUpdate = Partial<InsertUser> & {
   isOnline?: boolean;
-  lastActive?: Date;
   stripeCustomerId?: string;
   accountBalance?: number;
-  reviewCount?: number;
 };
 
 export type InsertReading = z.infer<typeof insertReadingSchema>;
@@ -365,3 +369,12 @@ export type Message = typeof messages.$inferSelect;
 
 export type InsertGift = z.infer<typeof insertGiftSchema>;
 export type Gift = typeof gifts.$inferSelect;
+
+export type InsertPremiumMessage = z.infer<typeof insertPremiumMessageSchema>;
+export type PremiumMessage = typeof premiumMessages.$inferSelect;
+
+export type InsertReaderApplication = z.infer<typeof insertReaderApplicationSchema>;
+export type ReaderApplication = typeof readerApplications.$inferSelect;
+
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type Notification = typeof notifications.$inferSelect;

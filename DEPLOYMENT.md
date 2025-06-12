@@ -22,7 +22,7 @@ SoulSeer uses environment variables for configuration across both client and ser
 | Variable | Description | Used In | Example Value |
 |----------|-------------|---------|--------------|
 | `DATABASE_URL` | PostgreSQL connection string | Server | `postgresql://user:pass@localhost:5432/soulseer` |
-| `PORT` | Server port (defaults to 5000) | Server | `5000` |
+| `PORT` | Server port (defaults to 3000) | Server | `3000` |
 | `NODE_ENV` | Environment mode | Both | `development` or `production` |
 | `SESSION_SECRET` | Secret for session encryption | Server | `random-secure-string` |
 | `STRIPE_SECRET_KEY` | Stripe API secret key | Server | `sk_test_...` |
@@ -31,8 +31,8 @@ SoulSeer uses environment variables for configuration across both client and ser
 | `MUX_TOKEN_ID` | MUX API token ID | Server | `your-mux-token-id` |
 | `MUX_TOKEN_SECRET` | MUX API token secret | Server | `your-mux-token-secret` |
 | `MUX_WEBHOOK_SECRET` | MUX webhook signing secret | Server | `your-mux-webhook-secret` |
-| `VITE_API_URL` | Backend API URL | Client | `http://localhost:5000/api` or production URL |
-| `VITE_WEBSOCKET_URL` | WebSocket server URL | Client | `ws://localhost:5000` or production URL |
+| `VITE_API_URL` | Backend API URL | Client | `http://localhost:3000/api` or production URL |
+| `VITE_WEBSOCKET_URL` | WebSocket server URL | Client | `ws://localhost:3000` or production URL |
 | `VITE_ENABLE_WEBSOCKET` | Enable WebSocket features | Client | `true` or `false` |
 | `VITE_ENABLE_LIVESTREAMS` | Enable livestream features | Client | `true` or `false` |
 | `VITE_ENABLE_CHECKOUT` | Enable payment checkout | Client | `true` or `false` |
@@ -42,6 +42,7 @@ SoulSeer uses environment variables for configuration across both client and ser
 | `VITE_APP_DOMAIN` | Application domain | Client | `soulseer.app` |
 | `VITE_APP_STORE_ID` | iOS App Store ID | Client | `your-app-store-id` |
 | `VITE_PLAY_STORE_ID` | Google Play Store ID | Client | `your-play-store-id` |
+| `JWT_SECRET` | Secret key for signing JWT tokens. Critical for authentication security. MUST be a strong, unique value in production. | Server | `a-very-strong-random-secret-key` |
 
 ### How Environment Variables Are Loaded
 
@@ -69,7 +70,7 @@ SoulSeer uses environment variables for configuration across both client and ser
 When deploying to Railway, you'll need to set the environment variables in your Railway project. You can do this through the Railway dashboard or using the CLI:
 
 ```bash
-railway variables set DATABASE_URL=your_postgres_database_url STRIPE_SECRET_KEY=your_stripe_secret_key ...
+railway variables set DATABASE_URL=your_postgres_database_url STRIPE_SECRET_KEY=your_stripe_secret_key JWT_SECRET=your_production_jwt_secret ...
 ```
 
 Make sure to set all the variables listed in the [Environment Variables](#environment-variables) section above.
@@ -121,6 +122,20 @@ Make sure to set all the variables listed in the [Environment Variables](#enviro
    ```bash
    railway run npm run db:push
    ```
+
+## Developer Notes
+
+### Admin User Setup
+
+The script `server/setup-admin.ts` was originally designed for creating an admin user with the previous Appwrite authentication system. Due to the migration to a custom JWT-based email/password system, this script is **currently non-functional** as its Appwrite-specific components have been removed.
+
+If you need to create an initial admin user, this script will require refactoring. You would typically:
+1.  Define the admin user's email and a secure password (perhaps temporarily via environment variables for the script's run, or a more robust credentials management).
+2.  Use the `storage.createUser` method from `server/storage.ts`.
+3.  Ensure the password is hashed using the `hashPassword` utility from `server/auth.ts` before saving.
+4.  Assign the 'admin' role to this user.
+
+Please review and adapt `server/setup-admin.ts` to the new authentication system if this functionality is required.
 
 ## Vercel Deployment (Alternative)
 
