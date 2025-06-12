@@ -15,6 +15,7 @@ import { promisify } from "util";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { initializeWebSocketServer, notifyNewGift } from "./websocket";
 
 // Admin middleware
 const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
@@ -101,6 +102,9 @@ async function processCompletedReadingPayment(
 export async function registerRoutes(app: Express): Promise<Server> {
   // Create HTTP server
   const httpServer = createServer(app);
+
+  // Initialize WebSocket server for livestream chat and gifting
+  initializeWebSocketServer(httpServer);
 
   // Webhook endpoints removed
 
@@ -942,7 +946,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.updateUser(giftData.recipientId, {
         accountBalance: (recipient.accountBalance || 0) + readerAmount
       });
-      
+
+      // Broadcast the new gift to livestream viewers
+      const senderUsername = sender.username || `User #${userId}`;
+      const recipientUsername = recipient.username || `User #${giftData.recipientId}`;
+      notifyNewGift(gift, senderUsername, recipientUsername);
+
       res.status(201).json(gift);
     } catch (error) {
       console.error("Failed to create gift:", error);
@@ -1246,6 +1255,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Messages
+  // Legacy endpoint to fetch messages between two users
   app.get("/api/messages/:userId", verifyAppwriteToken, async (req, res) => {
     try {
       const userId = parseInt(req.params.userId);
@@ -1260,6 +1270,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Legacy send message endpoint
   app.post("/api/messages", verifyAppwriteToken, async (req, res) => {
     try {
       const messageData = req.body;
@@ -1302,6 +1313,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ count });
     } catch (error) {
       res.status(500).json({ message: "Failed to get unread message count" });
+    }
+  });
+
+  // Premium messaging endpoints used by the client UI
+  app.get("/api/messages/:userId/:recipientId", verifyAppwriteToken, async (req, res) => {
+    try {
+      const { userId, recipientId } = req.params;
+      const messages = await storage.getPremiumMessagesByUsers(userId, recipientId);
+      res.json(messages);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch messages" });
+    }
+  });
+
+  app.post("/api/messages/send", verifyAppwriteToken, async (req, res) => {
+    try {
+      const { receiverId, content, isPaid, price } = req.body;
+      const message = await storage.createPremiumMessage({
+        senderId: req.user.id,
+        receiverId,
+        message: content,
+        isPaid: Boolean(isPaid),
+        price: price ?? null,
+      });
+      res.status(201).json(message);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to send message" });
+    }
+  });
+
+  app.post("/api/messages/mark-read", verifyAppwriteToken, async (req, res) => {
+    try {
+      const { userId, recipientId } = req.body;
+      await storage.markPremiumMessagesRead(userId, recipientId);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to mark messages as read" });
+    }
+  });
+
+  app.post("/api/messages/:id/pay", verifyAppwriteToken, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid message id" });
+
+      const message = await storage.payForPremiumMessage(id);
+      if (!message) return res.status(404).json({ message: "Message not found" });
+
+      // Deduct balance from payer and credit sender
+      if (message.price && message.receiverId === req.user.id) {
+        const amount = Number(message.price);
+        const payer = await storage.getUser(req.user.id);
+        const sender = await storage.getUser(message.senderId);
+        if (payer && sender) {
+          await storage.updateUser(payer.id, { accountBalance: (Number(payer.accountBalance)||0) - amount });
+          const credit = Math.floor(amount * 0.7);
+          await storage.updateUser(sender.id, { accountBalance: (Number(sender.accountBalance)||0) + credit });
+        }
+      }
+
+      res.json(message);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to process payment" });
     }
   });
 

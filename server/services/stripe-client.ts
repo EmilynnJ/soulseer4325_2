@@ -7,6 +7,105 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
   apiVersion: '2025-02-24.acacia'
 });
 
+/** Generic helper to create a payment intent */
+async function createPaymentIntent(params: Stripe.PaymentIntentCreateParams) {
+  const intent = await stripe.paymentIntents.create({
+    automatic_payment_methods: { enabled: true },
+    currency: 'usd',
+    ...params,
+  });
+  return { clientSecret: intent.client_secret!, paymentIntentId: intent.id };
+}
+
+/** Update an existing payment intent */
+async function updatePaymentIntent(
+  paymentIntentId: string,
+  params: Stripe.PaymentIntentUpdateParams
+) {
+  const intent = await stripe.paymentIntents.update(paymentIntentId, params);
+  return { success: true, paymentIntentId: intent.id, status: intent.status };
+}
+
+/** Capture a payment intent */
+async function capturePaymentIntent(paymentIntentId: string) {
+  const intent = await stripe.paymentIntents.capture(paymentIntentId);
+  return { success: true, amount: intent.amount_received };
+}
+
+/** Retrieve a payment intent */
+function retrievePaymentIntent(paymentIntentId: string) {
+  return stripe.paymentIntents.retrieve(paymentIntentId);
+}
+
+/** Sync a product record with Stripe */
+async function syncProductWithStripe(product: {
+  id: number;
+  name: string;
+  description: string;
+  price: number;
+  imageUrl: string;
+  stripeProductId?: string | null;
+  stripePriceId?: string | null;
+}) {
+  let { stripeProductId, stripePriceId } = product;
+
+  if (stripeProductId) {
+    await stripe.products.update(stripeProductId, {
+      name: product.name,
+      description: product.description,
+      images: [product.imageUrl],
+    });
+  } else {
+    const created = await stripe.products.create({
+      name: product.name,
+      description: product.description,
+      images: [product.imageUrl],
+      default_price_data: {
+        currency: 'usd',
+        unit_amount: product.price,
+      },
+    });
+    stripeProductId = created.id;
+    stripePriceId = typeof created.default_price === 'string'
+      ? created.default_price
+      : (created.default_price as Stripe.Price).id;
+  }
+
+  if (stripePriceId) {
+    await stripe.prices.update(stripePriceId, {
+      unit_amount: product.price,
+    });
+  } else if (stripeProductId) {
+    const price = await stripe.prices.create({
+      product: stripeProductId,
+      unit_amount: product.price,
+      currency: 'usd',
+    });
+    stripePriceId = price.id;
+  }
+
+  return { stripeProductId: stripeProductId!, stripePriceId: stripePriceId! };
+}
+
+/** Fetch products from Stripe */
+async function fetchStripeProducts() {
+  const list = await stripe.products.list({ expand: ['data.default_price'], limit: 100 });
+  return list.data.map(p => {
+    const price = p.default_price as Stripe.Price;
+    return {
+      name: p.name,
+      description: p.description || '',
+      price: price?.unit_amount || 0,
+      imageUrl: p.images[0] || '',
+      category: p.metadata.category || 'general',
+      stock: Number(p.metadata.stock || 0),
+      featured: p.metadata.featured === 'true',
+      stripeProductId: p.id,
+      stripePriceId: price?.id || '',
+    };
+  });
+}
+
 /**
  * Create a payment intent for an on-demand reading
  */
@@ -258,10 +357,18 @@ async function addFundsToBalance(
   }
 }
 
-export default {
+const stripeClient = Object.assign(stripe, {
+  createPaymentIntent,
+  updatePaymentIntent,
+  capturePaymentIntent,
+  retrievePaymentIntent,
+  syncProductWithStripe,
+  fetchStripeProducts,
   createOnDemandReadingPayment,
   capturePartialPayment,
   createScheduledReadingPayment,
   processGiftPayment,
-  addFundsToBalance
-};
+  addFundsToBalance,
+});
+
+export default stripeClient;
