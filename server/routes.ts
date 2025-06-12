@@ -1,7 +1,3 @@
-import authRoutes from './routes/authRoutes';
-const router = express.Router();
-router.use('/api/auth', authRoutes);
-
 import express, { type Express, Request, Response, NextFunction } from "express";
 import authRoutes from './routes/authRoutes';
 import { createServer, type Server } from "http";
@@ -17,6 +13,7 @@ import { promisify } from "util";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { verifyJwtToken } from "./auth";
 
 // Admin middleware
 const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
@@ -159,7 +156,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Update reader status (online/offline)
-  app.patch("/api/readers/status", verifyAppwriteToken, async (req, res) => {
+  app.patch("/api/readers/status", verifyJwtToken, async (req, res) => {
     if (req.user.role !== "reader") {
       return res.status(403).json({ message: "Not authorized" });
     }
@@ -183,7 +180,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Update reader pricing
-  app.patch("/api/readers/pricing", verifyAppwriteToken, async (req, res) => {
+  app.patch("/api/readers/pricing", verifyJwtToken, async (req, res) => {
     if (req.user.role !== "reader") {
       return res.status(403).json({ message: "Not authorized" });
     }
@@ -233,7 +230,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Readings
-  app.post("/api/readings", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/readings", verifyJwtToken, async (req, res) => {
     try {
       const readingData = req.body;
       
@@ -255,7 +252,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/readings/client", verifyAppwriteToken, async (req, res) => {
+  app.get("/api/readings/client", verifyJwtToken, async (req, res) => {
     try {
       const readings = await storage.getReadingsByClient(req.user.id);
       res.json(readings);
@@ -264,7 +261,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/readings/reader", verifyAppwriteToken, async (req, res) => {
+  app.get("/api/readings/reader", verifyJwtToken, async (req, res) => {
     if (req.user.role !== "reader") {
       return res.status(401).json({ message: "Not authenticated as reader" });
     }
@@ -277,7 +274,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/readings/:id", verifyAppwriteToken, async (req, res) => {
+  app.get("/api/readings/:id", verifyJwtToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -300,7 +297,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.patch("/api/readings/:id/status", verifyAppwriteToken, async (req, res) => {
+  app.patch("/api/readings/:id/status", verifyJwtToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -329,7 +326,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Send a chat message in a reading session (no WebSocket - removed)
-  app.post("/api/readings/:id/message", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/readings/:id/message", verifyJwtToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -361,7 +358,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // End a reading session (no WebSocket - removed)
-  app.post("/api/readings/:id/end", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/readings/:id/end", verifyJwtToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -463,7 +460,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Create a payment intent for reading with per-minute billing
-  app.post("/api/readings/:id/create-billing-intent", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/readings/:id/create-billing-intent", verifyJwtToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -526,7 +523,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Stripe payment intent creation for shop checkout
-  app.post("/api/create-payment-intent", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/create-payment-intent", verifyJwtToken, async (req, res) => {
     try {
       const { amount } = req.body;
       
@@ -556,7 +553,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Admin-only routes for product management
-  app.post("/api/products", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/products", verifyJwtToken, async (req, res) => {
     if (req.user.role !== "admin") {
       return res.status(403).json({ message: "Not authorized" });
     }
@@ -570,7 +567,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.patch("/api/products/:id", verifyAppwriteToken, async (req, res) => {
+  app.patch("/api/products/:id", verifyJwtToken, async (req, res) => {
     if (req.user.role !== "admin") {
       return res.status(403).json({ message: "Not authorized" });
     }
@@ -594,7 +591,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Sync all products with Stripe
-  app.post("/api/products/sync-with-stripe", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/products/sync-with-stripe", verifyJwtToken, async (req, res) => {
     if (req.user.role !== "admin") {
       return res.status(403).json({ message: "Not authorized" });
     }
@@ -647,7 +644,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Import products from Stripe
-  app.post("/api/products/import-from-stripe", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/products/import-from-stripe", verifyJwtToken, async (req, res) => {
     if (req.user.role !== "admin") {
       return res.status(403).json({ message: "Not authorized" });
     }
@@ -714,7 +711,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Orders
-  app.post("/api/orders", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/orders", verifyJwtToken, async (req, res) => {
     try {
       const orderData = req.body;
       
@@ -742,7 +739,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/orders", verifyAppwriteToken, async (req, res) => {
+  app.get("/api/orders", verifyJwtToken, async (req, res) => {
     try {
       const orders = await storage.getOrdersByUser(req.user.id);
       res.json(orders);
@@ -751,7 +748,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/orders/:id", verifyAppwriteToken, async (req, res) => {
+  app.get("/api/orders/:id", verifyJwtToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -814,7 +811,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post("/api/livestreams", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/livestreams", verifyJwtToken, async (req, res) => {
     if (req.user.role !== "reader") {
       return res.status(403).json({ message: "Not authorized" });
     }
@@ -841,7 +838,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.patch("/api/livestreams/:id/status", verifyAppwriteToken, async (req, res) => {
+  app.patch("/api/livestreams/:id/status", verifyJwtToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -871,7 +868,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Gifting system for livestreams
-  app.post("/api/gifts", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/gifts", verifyJwtToken, async (req, res) => {
     try {
       const giftData = req.body;
       const userId = req.user.id;
@@ -974,7 +971,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/gifts/received", verifyAppwriteToken, async (req, res) => {
+  app.get("/api/gifts/received", verifyJwtToken, async (req, res) => {
     try {
       const gifts = await storage.getGiftsByRecipient(req.user.id);
       
@@ -991,7 +988,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/gifts/sent", verifyAppwriteToken, async (req, res) => {
+  app.get("/api/gifts/sent", verifyJwtToken, async (req, res) => {
     try {
       const gifts = await storage.getGiftsBySender(req.user.id);
       
@@ -1009,7 +1006,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Admin endpoint to get unprocessed gifts
-  app.get("/api/admin/gifts/unprocessed", verifyAppwriteToken, requireAdmin, async (req, res) => {
+  app.get("/api/admin/gifts/unprocessed", verifyJwtToken, requireAdmin, async (req, res) => {
     try {
       // Get all unprocessed gifts
       const unprocessedGifts = await storage.getUnprocessedGifts();
@@ -1037,7 +1034,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Admin endpoint to get all gifts
-  app.get("/api/admin/gifts", verifyAppwriteToken, requireAdmin, async (req, res) => {
+  app.get("/api/admin/gifts", verifyJwtToken, requireAdmin, async (req, res) => {
     try {
       // Get all gifts with optional limit
       const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
@@ -1070,7 +1067,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin endpoint to process gifts 
-  app.post("/api/admin/gifts/process", verifyAppwriteToken, requireAdmin, async (req, res) => {
+  app.post("/api/admin/gifts/process", verifyJwtToken, requireAdmin, async (req, res) => {
     try {
       // Get all unprocessed gifts
       const unprocessedGifts = await storage.getUnprocessedGifts();
@@ -1128,7 +1125,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post("/api/forum/posts", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/forum/posts", verifyJwtToken, async (req, res) => {
     try {
       const postData = req.body;
       
@@ -1168,7 +1165,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post("/api/forum/posts/:id/like", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/forum/posts/:id/like", verifyJwtToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1220,7 +1217,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post("/api/forum/posts/:id/comments", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/forum/posts/:id/comments", verifyJwtToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1247,7 +1244,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Messages
-  app.get("/api/messages/:userId", verifyAppwriteToken, async (req, res) => {
+  app.get("/api/messages/:userId", verifyJwtToken, async (req, res) => {
     try {
       const userId = parseInt(req.params.userId);
       if (isNaN(userId)) {
@@ -1261,7 +1258,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post("/api/messages", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/messages", verifyJwtToken, async (req, res) => {
     try {
       const messageData = req.body;
       
@@ -1279,7 +1276,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.patch("/api/messages/:id/read", verifyAppwriteToken, async (req, res) => {
+  app.patch("/api/messages/:id/read", verifyJwtToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1297,7 +1294,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/messages/unread/count", verifyAppwriteToken, async (req, res) => {
+  app.get("/api/messages/unread/count", verifyJwtToken, async (req, res) => {
     try {
       const count = await storage.getUnreadMessageCount(req.user.id);
       res.json({ count });
@@ -1314,7 +1311,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Create a payment intent for on-demand readings
-  app.post("/api/stripe/create-payment-intent", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/stripe/create-payment-intent", verifyJwtToken, async (req, res) => {
     try {
       const { amount, readingId, metadata = {} } = req.body;
       
@@ -1343,7 +1340,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Update an existing payment intent (for pay-per-minute)
-  app.post("/api/stripe/update-payment-intent", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/stripe/update-payment-intent", verifyJwtToken, async (req, res) => {
     try {
       const { paymentIntentId, amount, metadata = {} } = req.body;
       
@@ -1371,7 +1368,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Capture a payment intent (for finalized pay-per-minute sessions)
-  app.post("/api/stripe/capture-payment-intent", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/stripe/capture-payment-intent", verifyJwtToken, async (req, res) => {
     try {
       const { paymentIntentId } = req.body;
       
@@ -1388,7 +1385,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Create an on-demand reading session
-  app.post("/api/readings/on-demand", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/readings/on-demand", verifyJwtToken, async (req, res) => {
     try {
       const { readerId, type } = req.body;
       
@@ -1476,7 +1473,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Schedule a reading (fixed price one-time payment)
-  app.post("/api/readings/schedule", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/readings/schedule", verifyJwtToken, async (req, res) => {
     try {
       const { readerId, type, duration, scheduledFor, notes, price } = req.body;
       
@@ -1583,7 +1580,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Start an on-demand reading session (after payment) (no notify WebSocket)
-  app.post("/api/readings/:id/start", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/readings/:id/start", verifyJwtToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1620,7 +1617,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Start billing for a reading session
-  app.post("/api/readings/:id/start-billing", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/readings/:id/start-billing", verifyJwtToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1668,7 +1665,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Pause billing for a reading session
-  app.post("/api/readings/:id/pause-billing", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/readings/:id/pause-billing", verifyJwtToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1740,7 +1737,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Process per-minute billing tick
-  app.post("/api/readings/:id/billing-tick", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/readings/:id/billing-tick", verifyJwtToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1811,7 +1808,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Complete an on-demand reading session and process payment from account balance (no notify WebSocket)
-  app.post("/api/readings/:id/end", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/readings/:id/end", verifyJwtToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1920,7 +1917,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Rate a completed reading (no notify WebSocket)
-  app.post("/api/readings/:id/rate", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/readings/:id/rate", verifyJwtToken, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) {
@@ -1966,7 +1963,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Account Balance Management
-  app.get('/api/user/balance', verifyAppwriteToken, async (req, res) => {
+  app.get('/api/user/balance', verifyJwtToken, async (req, res) => {
     try {
       const user = await storage.getUser(req.user.id);
       if (!user) {
@@ -1984,7 +1981,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Get user's reading history
-  app.get('/api/users/:id/readings', verifyAppwriteToken, async (req, res) => {
+  app.get('/api/users/:id/readings', verifyJwtToken, async (req, res) => {
     // Users can only access their own readings
     if (req.user.id !== parseInt(req.params.id) && req.user.role !== 'admin') {
       return res.status(403).json({ message: "Not authorized" });
@@ -2020,7 +2017,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Get user's upcoming readings
-  app.get('/api/users/:id/readings/upcoming', verifyAppwriteToken, async (req, res) => {
+  app.get('/api/users/:id/readings/upcoming', verifyJwtToken, async (req, res) => {
     // Users can only access their own upcoming readings
     if (req.user.id !== parseInt(req.params.id) && req.user.role !== 'admin') {
       return res.status(403).json({ message: "Not authorized" });
@@ -2063,7 +2060,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Add funds to account balance 
-  app.post('/api/user/add-funds', verifyAppwriteToken, async (req, res) => {
+  app.post('/api/user/add-funds', verifyJwtToken, async (req, res) => {
     const { amount } = req.body;
     
     if (!amount || isNaN(amount) || amount <= 0) {
@@ -2088,7 +2085,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Confirm added funds (after payment is completed)
-  app.post('/api/user/confirm-funds', verifyAppwriteToken, async (req, res) => {
+  app.post('/api/user/confirm-funds', verifyJwtToken, async (req, res) => {
     const { paymentIntentId } = req.body;
     
     if (!paymentIntentId) {
@@ -2138,7 +2135,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Admin API routes
   
   // Get all readings (admin only)
-  app.get("/api/admin/readings", verifyAppwriteToken, async (req, res) => {
+  app.get("/api/admin/readings", verifyJwtToken, async (req, res) => {
     if (req.user.role !== "admin") {
       return res.status(403).json({ message: "Unauthorized. Admin access required." });
     }
@@ -2164,7 +2161,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Get all readers (admin only)
-  app.get("/api/admin/readers", verifyAppwriteToken, async (req, res) => {
+  app.get("/api/admin/readers", verifyJwtToken, async (req, res) => {
     if (req.user.role !== "admin") {
       return res.status(403).json({ message: "Unauthorized. Admin access required." });
     }
@@ -2179,7 +2176,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Get all users (admin only)
-  app.get("/api/admin/users", verifyAppwriteToken, requireAdmin, async (req, res) => {
+  app.get("/api/admin/users", verifyJwtToken, requireAdmin, async (req, res) => {
     try {
       // We need to get all users - adapted storage method might be needed
       const users = await storage.getAllUsers();
@@ -2213,7 +2210,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Admin endpoint to add new readers with profile image
-  app.post("/api/admin/readers", verifyAppwriteToken, requireAdmin, upload.single('profileImage'), async (req: any, res: any) => {
+  app.post("/api/admin/readers", verifyJwtToken, requireAdmin, upload.single('profileImage'), async (req: any, res: any) => {
     try {
       console.log("Reader form submission received:", req.body);
       const { username, password, email, fullName, bio, ratePerMinute, specialties } = req.body;
@@ -2309,7 +2306,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Livestream API for readings
-  app.post("/api/readings/:id/livestream", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/readings/:id/livestream", verifyJwtToken, async (req, res) => {
     try {
       const readingId = parseInt(req.params.id);
       if (isNaN(readingId)) {
@@ -2364,7 +2361,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // API endpoint to start a livestream
-  app.post("/api/livestreams/:id/start", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/livestreams/:id/start", verifyJwtToken, async (req, res) => {
     try {
       const livestreamId = parseInt(req.params.id);
       if (isNaN(livestreamId)) {
@@ -2395,7 +2392,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // API endpoint to end a livestream
-  app.post("/api/livestreams/:id/end", verifyAppwriteToken, async (req, res) => {
+  app.post("/api/livestreams/:id/end", verifyJwtToken, async (req, res) => {
     try {
       const livestreamId = parseInt(req.params.id);
       if (isNaN(livestreamId)) {

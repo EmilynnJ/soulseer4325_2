@@ -1,11 +1,11 @@
 import { Router } from 'express';
-import { verifyAppwriteToken } from '../auth';
+import { verifyJwtToken } from '../auth';
 import { storage } from '../storage';
 
 const router = Router();
 
 // Get WebRTC configuration for a reading
-router.get('/api/webrtc/config/:readingId', verifyAppwriteToken, async (req, res) => {
+router.get('/api/webrtc/config/:readingId', verifyJwtToken, async (req, res) => {
   try {
     const readingId = parseInt(req.params.readingId);
     if (isNaN(readingId)) {
@@ -43,7 +43,7 @@ router.get('/api/webrtc/config/:readingId', verifyAppwriteToken, async (req, res
 });
 
 // Start a WebRTC session for a reading
-router.post('/api/webrtc/start/:readingId', verifyAppwriteToken, async (req, res) => {
+router.post('/api/webrtc/start/:readingId', verifyJwtToken, async (req, res) => {
   try {
     const readingId = parseInt(req.params.readingId);
     if (isNaN(readingId)) {
@@ -80,7 +80,7 @@ router.post('/api/webrtc/start/:readingId', verifyAppwriteToken, async (req, res
 });
 
 // End a WebRTC session for a reading
-router.post('/api/webrtc/end/:readingId', verifyAppwriteToken, async (req, res) => {
+router.post('/api/webrtc/end/:readingId', verifyJwtToken, async (req, res) => {
   try {
     const readingId = parseInt(req.params.readingId);
     if (isNaN(readingId)) {

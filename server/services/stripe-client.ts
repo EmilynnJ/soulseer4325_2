@@ -2,9 +2,16 @@ import Stripe from 'stripe';
 import { log } from '../vite';
 
 // Initialize Stripe with API key from environment variables
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
-  apiVersion: '2023-10-16'
-});
+const stripeKey = process.env.STRIPE_SECRET_KEY;
+let stripe: Stripe | null = null;
+
+if (stripeKey) {
+  stripe = new Stripe(stripeKey, {
+    apiVersion: '2023-10-16'
+  });
+} else {
+  log('STRIPE_SECRET_KEY is not set. Stripe functionality disabled.', 'stripe');
+}
 
 /**
  * Create a payment intent for an on-demand reading
@@ -23,6 +30,9 @@ async function createOnDemandReadingPayment(
   error?: string;
 }> {
   try {
+    if (!stripe) {
+      return { success: false, error: 'Stripe not configured' };
+    }
     // Calculate initial amount to authorize (30 minutes worth)
     const initialAmount = pricePerMinute * 30; // 30 minutes in cents
     
@@ -73,6 +83,9 @@ async function capturePartialPayment(
   error?: string;
 }> {
   try {
+    if (!stripe) {
+      return { success: false, amountCaptured: 0, error: 'Stripe not configured' };
+    }
     // Get the payment intent
     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
     
@@ -127,6 +140,9 @@ async function createScheduledReadingPayment(
   error?: string;
 }> {
   try {
+    if (!stripe) {
+      return { success: false, error: 'Stripe not configured' };
+    }
     // Create a payment intent with the total amount
     const paymentIntent = await stripe.paymentIntents.create({
       amount: totalAmount,
@@ -175,6 +191,9 @@ async function processGiftPayment(
   error?: string;
 }> {
   try {
+    if (!stripe) {
+      return { success: false, error: 'Stripe not configured' };
+    }
     // Calculate the split (70% to reader, 30% to platform)
     const readerAmount = Math.round(amount * 0.7);
     const platformAmount = amount - readerAmount;
@@ -226,6 +245,9 @@ async function addFundsToBalance(
   error?: string;
 }> {
   try {
+    if (!stripe) {
+      return { success: false, error: 'Stripe not configured' };
+    }
     // Create a payment intent for adding funds
     const paymentIntent = await stripe.paymentIntents.create({
       amount,
