@@ -2,6 +2,7 @@ import { createContext, ReactNode, useContext, useEffect, useState } from "react
 import { User } from "@shared/schema";
 import { apiRequest, queryClient } from "../lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useMutation, type UseMutationResult } from "@tanstack/react-query";
 // import { account, ID } from "../lib/appwrite"; // Appwrite import removed
 
 type AuthContextType = {
@@ -13,6 +14,9 @@ type AuthContextType = {
   login: (email: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
   register: (userData: RegisterData) => Promise<User>;
+  loginMutation: UseMutationResult<User, Error, { email: string; password: string }>;
+  registerMutation: UseMutationResult<User, Error, RegisterData>;
+  logoutMutation: UseMutationResult<void, Error, void>;
 };
 
 type RegisterData = {
@@ -148,6 +152,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // React Query mutations for components to consume
+  const loginMutation = useMutation(
+    ({ email, password }: { email: string; password: string }) =>
+      login(email, password)
+  );
+
+  const registerMutation = useMutation((data: RegisterData) => register(data));
+
+  const logoutMutation = useMutation(logout);
+
   return (
     <AuthContext.Provider
       value={{
@@ -159,6 +173,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         logout,
         register,
+        loginMutation,
+        registerMutation,
+        logoutMutation,
       }}
     >
       {children}

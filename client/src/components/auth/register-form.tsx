@@ -23,7 +23,6 @@ import {
 import { GlowCard } from "@/components/ui/glow-card";
 
 const registerSchema = z.object({
-  username: z.string().min(3, "Username must be at least 3 characters"),
   email: z.string().email("Please enter a valid email address"),
   password: z.string()
     .min(8, "Password must be at least 8 characters")
@@ -46,7 +45,6 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
   const form = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
-      username: "",
       email: "",
       password: "",
       fullName: "",
@@ -55,7 +53,12 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
   });
 
   async function onSubmit(data: RegisterFormValues) {
-    await registerMutation.mutateAsync(data);
+    await registerMutation.mutateAsync({
+      email: data.email,
+      password: data.password,
+      fullName: data.fullName,
+      role: data.role,
+    });
     onSuccess();
   }
 
@@ -83,23 +86,6 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
             )}
           />
 
-          <FormField
-            control={form.control}
-            name="username"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel className="text-light font-playfair">Username</FormLabel>
-                <FormControl>
-                  <Input
-                    placeholder="Choose a unique username"
-                    {...field}
-                    className="bg-primary-light/30 border-accent-gold/30 font-playfair text-gray-800"
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
 
           <FormField
             control={form.control}

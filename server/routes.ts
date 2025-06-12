@@ -1,7 +1,3 @@
-import authRoutes from './routes/authRoutes';
-const router = express.Router();
-router.use('/api/auth', authRoutes);
-
 import express, { type Express, Request, Response, NextFunction } from "express";
 import authRoutes from './routes/authRoutes';
 import { createServer, type Server } from "http";
