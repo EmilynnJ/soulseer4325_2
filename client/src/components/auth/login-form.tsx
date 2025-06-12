@@ -26,6 +26,13 @@ interface LoginFormProps {
   onSuccess: () => void;
 }
 
+/**
+ * Renders a login form that authenticates a user with an email and password.
+ *
+ * On successful login, invokes the provided {@link onSuccess} callback.
+ *
+ * @param onSuccess - Callback function called after a successful login.
+ */
 export function LoginForm({ onSuccess }: LoginFormProps) {
   const { loginMutation } = useAuth();
 

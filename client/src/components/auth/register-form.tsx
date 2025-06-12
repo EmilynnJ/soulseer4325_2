@@ -39,6 +39,11 @@ interface RegisterFormProps {
   onSuccess: () => void;
 }
 
+/**
+ * Renders a user registration form with validation and submission logic.
+ *
+ * Collects full name, email, password, and user role, validates input, and submits the data to create a new account. Invokes the {@link onSuccess} callback after successful registration.
+ */
 export function RegisterForm({ onSuccess }: RegisterFormProps) {
   const { registerMutation } = useAuth();
 
