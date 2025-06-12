@@ -1,6 +1,7 @@
 import { neon } from '@neondatabase/serverless';
 import { broadcastToReading } from './signaling';
 
+
 const sql = neon(process.env.DATABASE_URL!);
 
 export class BillingService {
@@ -196,28 +197,38 @@ export class BillingService {
 
   private async endSessionDueToInsufficientFunds(sessionId: string) {
     try {
+      const [sessionInfo] = await sql`
+        SELECT reader_id, client_id FROM rtc_sessions WHERE id = ${sessionId}
+      `;
+
       await sql`
-        UPDATE rtc_sessions 
-        SET 
+        UPDATE rtc_sessions
+        SET
           status = 'ended',
           ended_at = NOW(),
           end_reason = 'insufficient_funds'
         WHERE id = ${sessionId}
       `;
-      
-      const [session] = await sql`
-        SELECT total_minutes, amount_charged
-        FROM rtc_sessions
-        WHERE id = ${sessionId}
-      `;
 
-      broadcastToReading(Number(sessionId), 'billing_ended', {
-        readingId: Number(sessionId),
-        elapsedSeconds: Number(session?.total_minutes || 0) * 60,
-        elapsedMinutes: Number(session?.total_minutes || 0),
-        totalCost: Number(session?.amount_charged || 0) / 100,
-        reason: 'insufficient_funds'
-      });
+      if (sessionInfo) {
+        const message = 'Session ended due to insufficient funds';
+        await storage.createNotification({
+          userId: sessionInfo.client_id,
+          type: 'session_cancelled',
+          message,
+          relatedEntityId: Number(sessionId),
+          relatedEntityType: 'rtc_session'
+        });
+        await storage.createNotification({
+          userId: sessionInfo.reader_id,
+          type: 'session_cancelled',
+          message,
+          relatedEntityId: Number(sessionId),
+          relatedEntityType: 'rtc_session'
+        });
+
+        sendToUser(Number(sessionId), sessionInfo.client_id, 'notification', { message });
+        sendToUser(Number(sessionId), sessionInfo.reader_id, 'notification', { message });
 
       console.log(`Session ${sessionId} ended due to insufficient funds`);
       

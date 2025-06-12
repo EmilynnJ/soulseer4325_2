@@ -5,8 +5,9 @@ import { storage } from '../storage';
 export class WebRTCService {
   private io: SocketIOServer;
   private rooms: Map<string, Set<string>> = new Map();
-  private userSocketMap: Map<number, string> = new Map();
-  private socketUserMap: Map<string, number> = new Map();
+  // Use string based user IDs to match the database UUID type
+  private userSocketMap: Map<string, string> = new Map();
+  private socketUserMap: Map<string, string> = new Map();
   private readingRooms: Map<number, Set<string>> = new Map();
 
   constructor(server: Server) {
@@ -25,7 +26,7 @@ export class WebRTCService {
       console.log(`Socket connected: ${socket.id}`);
 
       // Authentication
-      socket.on('authenticate', (data: { userId: number }) => {
+      socket.on('authenticate', (data: { userId: string }) => {
         const { userId } = data;
         if (!userId) return;
 
@@ -35,7 +36,7 @@ export class WebRTCService {
       });
 
       // Join a reading room
-      socket.on('join_reading', async (data: { readingId: number, userId: number, role: 'reader' | 'client' }) => {
+      socket.on('join_reading', async (data: { readingId: number; userId: string; role: 'reader' | 'client' }) => {
         try {
           const { readingId, userId, role } = data;
           
@@ -47,7 +48,7 @@ export class WebRTCService {
           }
 
           // Check if user is authorized for this reading
-          if ((role === 'reader' && reading.readerId !== userId) || 
+          if ((role === 'reader' && reading.readerId !== userId) ||
               (role === 'client' && reading.clientId !== userId)) {
             socket.emit('error', { message: 'Not authorized for this reading' });
             return;
@@ -121,7 +122,7 @@ export class WebRTCService {
           if (!reading) return;
           
           // Only client can start billing
-          if (reading.clientId !== userId) return;
+            if (reading.clientId !== userId) return;
           
           const roomId = `reading_${readingId}`;
           
@@ -138,7 +139,7 @@ export class WebRTCService {
         }
       });
 
-      socket.on('end_call', async (data) => {
+      socket.on('end_call', async (data: { readingId: number }) => {
         const { readingId } = data;
         const userId = this.socketUserMap.get(socket.id);
         

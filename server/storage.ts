@@ -1,4 +1,4 @@
-import { users, type User, type InsertUser, type UserUpdate, readings, type Reading, type InsertReading, products, type Product, type InsertProduct, orders, type Order, type InsertOrder, orderItems, type OrderItem, type InsertOrderItem, livestreams, type Livestream, type InsertLivestream, forumPosts, type ForumPost, type InsertForumPost, forumComments, type ForumComment, type InsertForumComment, messages, type Message, type InsertMessage, gifts, type Gift, type InsertGift, readerApplications, type ReaderApplication, type InsertReaderApplication } from "@shared/schema";
+import { users, type User, type InsertUser, type UserUpdate, readings, type Reading, type InsertReading, products, type Product, type InsertProduct, orders, type Order, type InsertOrder, orderItems, type OrderItem, type InsertOrderItem, livestreams, type Livestream, type InsertLivestream, forumPosts, type ForumPost, type InsertForumPost, forumComments, type ForumComment, type InsertForumComment, messages, type Message, type InsertMessage, gifts, type Gift, type InsertGift, readerApplications, type ReaderApplication, type InsertReaderApplication, notifications, type Notification, type InsertNotification } from "@shared/schema";
 import session from "express-session";
 import createMemoryStore from "memorystore";
 import connectPgSimple from "connect-pg-simple";
@@ -70,6 +70,13 @@ export interface IStorage {
   getMessagesByUsers(userId1: string, userId2: string): Promise<Message[]>;
   getUnreadMessageCount(userId: string): Promise<number>;
   markMessageAsRead(id: number): Promise<Message | undefined>; // Message ID is serial
+
+  // Premium Messages
+  createPremiumMessage(message: InsertPremiumMessage): Promise<PremiumMessage>;
+  getPremiumMessagesByUsers(userId1: string, userId2: string): Promise<PremiumMessage[]>;
+  markPremiumMessagesRead(receiverId: string, senderId: string): Promise<number>;
+  payForPremiumMessage(id: number): Promise<PremiumMessage | undefined>;
+  getUnreadPremiumMessageCount(userId: string): Promise<number>;
   
   // Gifts for livestreams
   createGift(gift: InsertGift): Promise<Gift>;
@@ -82,7 +89,13 @@ export interface IStorage {
   // Reader applications
   createReaderApplication(app: InsertReaderApplication): Promise<ReaderApplication>;
   getReaderApplications(): Promise<ReaderApplication[]>;
-  
+
+  // Notifications
+  createNotification(notification: InsertNotification): Promise<Notification>;
+  getNotificationsByUser(userId: string): Promise<Notification[]>;
+  markNotificationAsRead(id: number): Promise<Notification | undefined>;
+  markAllNotificationsAsRead(userId: string): Promise<void>;
+
   // Session store for authentication
   sessionStore: SessionStore;
 }
@@ -646,12 +659,54 @@ export class DatabaseStorage implements IStorage {
         .set({ readAt: new Date() })
         .where(eq(messages.id, id))
         .returning();
-        
+
       return updatedMessage;
     } catch (error) {
       console.error("Error marking message as read:", error);
       return undefined;
     }
+  }
+
+  // Premium message methods
+  async createPremiumMessage(message: InsertPremiumMessage): Promise<PremiumMessage> {
+    const [created] = await db.insert(premiumMessages).values({
+      ...message,
+      createdAt: new Date(),
+      isPaid: message.isPaid ?? false,
+      isRead: message.isRead ?? false
+    }).returning();
+    return created;
+  }
+
+  async getPremiumMessagesByUsers(userId1: string, userId2: string): Promise<PremiumMessage[]> {
+    return await db.select().from(premiumMessages).where(
+      or(
+        and(eq(premiumMessages.senderId, userId1), eq(premiumMessages.receiverId, userId2)),
+        and(eq(premiumMessages.senderId, userId2), eq(premiumMessages.receiverId, userId1))
+      )
+    ).orderBy(asc(premiumMessages.createdAt));
+  }
+
+  async markPremiumMessagesRead(receiverId: string, senderId: string): Promise<number> {
+    const result = await db.update(premiumMessages)
+      .set({ isRead: true })
+      .where(and(eq(premiumMessages.receiverId, receiverId), eq(premiumMessages.senderId, senderId), eq(premiumMessages.isRead, false)))
+      .returning({ count: sql`count(*)` });
+    return Number(result[0]?.count || 0);
+  }
+
+  async payForPremiumMessage(id: number): Promise<PremiumMessage | undefined> {
+    const [msg] = await db.update(premiumMessages)
+      .set({ isPaid: true })
+      .where(eq(premiumMessages.id, id))
+      .returning();
+    return msg;
+  }
+
+  async getUnreadPremiumMessageCount(userId: string): Promise<number> {
+    const result = await db.select({ count: sql`count(*)` }).from(premiumMessages)
+      .where(and(eq(premiumMessages.receiverId, userId), eq(premiumMessages.isRead, false)));
+    return Number(result[0]?.count || 0);
   }
   
   // Gift methods for livestreams
@@ -759,6 +814,55 @@ export class DatabaseStorage implements IStorage {
     } catch (error) {
       console.error('Error fetching reader applications:', error);
       return [];
+    }
+  }
+
+  // Notification methods
+  async createNotification(notification: InsertNotification): Promise<Notification> {
+    try {
+      const [created] = await db.insert(notifications).values({
+        ...notification,
+        createdAt: new Date(),
+        isRead: false
+      }).returning();
+      return created;
+    } catch (error) {
+      console.error('Error creating notification:', error);
+      throw error;
+    }
+  }
+
+  async getNotificationsByUser(userId: string): Promise<Notification[]> {
+    try {
+      return await db.select().from(notifications)
+        .where(eq(notifications.userId, userId))
+        .orderBy(desc(notifications.createdAt));
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+      return [];
+    }
+  }
+
+  async markNotificationAsRead(id: number): Promise<Notification | undefined> {
+    try {
+      const [updated] = await db.update(notifications)
+        .set({ isRead: true })
+        .where(eq(notifications.id, id))
+        .returning();
+      return updated;
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+      return undefined;
+    }
+  }
+
+  async markAllNotificationsAsRead(userId: string): Promise<void> {
+    try {
+      await db.update(notifications)
+        .set({ isRead: true })
+        .where(eq(notifications.userId, userId));
+    } catch (error) {
+      console.error('Error marking all notifications as read:', error);
     }
   }
 }

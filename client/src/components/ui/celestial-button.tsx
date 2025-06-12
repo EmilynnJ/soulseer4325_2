@@ -9,6 +9,12 @@ const celestialButtonVariants = cva(
     variants: {
       variant: {
         default: "bg-accent/20 text-accent hover:bg-accent/30 border border-accent/40 backdrop-blur-sm",
+        /**
+         * Alias primary variant to default for backward compatibility.
+         * Some components still use `variant="primary"` which would fail type
+         * checking without this entry.
+         */
+        primary: "bg-accent/20 text-accent hover:bg-accent/30 border border-accent/40 backdrop-blur-sm",
         secondary: "bg-primary-dark/30 text-light hover:bg-primary-dark/40 border border-light/20 backdrop-blur-sm",
         destructive: "bg-destructive/20 text-destructive hover:bg-destructive/30 border border-destructive/40 backdrop-blur-sm",
         outline: "border border-input bg-transparent hover:bg-accent/10 text-light hover:text-accent",
