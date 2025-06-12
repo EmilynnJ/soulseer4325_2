@@ -5,8 +5,15 @@ import rateLimit from 'express-rate-limit';
 
 const router = Router();
 
+// Rate limiter for fetching notifications
+const fetchNotificationsLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each user to 100 requests per windowMs
+  message: { message: 'Too many requests, please try again later.' },
+});
+
 // Get notifications for current user
-router.get('/', verifyJwtToken, async (req, res) => {
+router.get('/', verifyJwtToken, fetchNotificationsLimiter, async (req, res) => {
   try {
     const userId = req.user!.id;
     const notifications = await storage.getNotificationsByUser(userId);
