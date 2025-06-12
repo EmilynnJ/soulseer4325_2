@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { verifyJwtToken } from '../auth';
 import { storage } from '../storage';
+import rateLimit from 'express-rate-limit';
 
 const router = Router();
 
@@ -31,8 +32,15 @@ router.post('/:id/mark-read', verifyJwtToken, async (req, res) => {
   }
 });
 
+// Rate limiter for marking all notifications as read
+const markAllReadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // Limit each user to 10 requests per windowMs
+  message: { message: 'Too many requests, please try again later.' },
+});
+
 // Mark all notifications as read
-router.post('/mark-all-read', verifyJwtToken, async (req, res) => {
+router.post('/mark-all-read', verifyJwtToken, markAllReadLimiter, async (req, res) => {
   try {
     const userId = req.user!.id;
     await storage.markAllNotificationsAsRead(userId);
