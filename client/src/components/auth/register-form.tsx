@@ -2,6 +2,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useAuth } from "@/hooks/use-auth";
+import { useState } from "react";
 import { CelestialButton } from "@/components/ui/celestial-button";
 import { Input } from "@/components/ui/input";
 import { Loader2 } from "lucide-react";
@@ -40,7 +41,8 @@ interface RegisterFormProps {
 }
 
 export function RegisterForm({ onSuccess }: RegisterFormProps) {
-  const { registerMutation } = useAuth();
+  const { register: registerUser } = useAuth();
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
@@ -53,13 +55,18 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
   });
 
   async function onSubmit(data: RegisterFormValues) {
-    await registerMutation.mutateAsync({
-      email: data.email,
-      password: data.password,
-      fullName: data.fullName,
-      role: data.role,
-    });
-    onSuccess();
+    setIsSubmitting(true);
+    try {
+      await registerUser({
+        email: data.email,
+        password: data.password,
+        fullName: data.fullName,
+        role: data.role,
+      });
+      onSuccess();
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -152,9 +159,9 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
               type="submit"
               variant="primary"
               className="w-full"
-              disabled={registerMutation.isPending}
+              disabled={isSubmitting}
             >
-              {registerMutation.isPending ? (
+              {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Creating account...
