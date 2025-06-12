@@ -1,9 +1,7 @@
 import authRoutes from './routes/authRoutes';
-const router = express.Router();
-router.use('/api/auth', authRoutes);
+import notificationRoutes from './routes/notificationRoutes';
 
 import express, { type Express, Request, Response, NextFunction } from "express";
-import authRoutes from './routes/authRoutes';
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { z } from "zod";
@@ -112,6 +110,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // API Routes
   app.use('/api/auth', authRoutes);
+  app.use('/api/notifications', notificationRoutes);
   
   // Readers
   app.get("/api/readers", async (req, res) => {

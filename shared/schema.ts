@@ -330,6 +330,9 @@ export const insertGiftSchema = createInsertSchema(gifts)
 
 export const insertReaderApplicationSchema = createInsertSchema(readerApplications)
   .omit({ id: true, createdAt: true, status: true });
+
+export const insertNotificationSchema = createInsertSchema(notifications)
+  .omit({ id: true, createdAt: true, isRead: true });
   
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -372,3 +375,6 @@ export type PremiumMessage = typeof premiumMessages.$inferSelect;
 
 export type InsertReaderApplication = z.infer<typeof insertReaderApplicationSchema>;
 export type ReaderApplication = typeof readerApplications.$inferSelect;
+
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type Notification = typeof notifications.$inferSelect;
