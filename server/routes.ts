@@ -17,6 +17,7 @@ import { promisify } from "util";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { initializeWebSocketServer, notifyNewGift } from "./websocket";
 
 // Admin middleware
 const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
@@ -103,6 +104,9 @@ async function processCompletedReadingPayment(
 export async function registerRoutes(app: Express): Promise<Server> {
   // Create HTTP server
   const httpServer = createServer(app);
+
+  // Initialize WebSocket server for livestream chat and gifting
+  initializeWebSocketServer(httpServer);
 
   // Webhook endpoints removed
 
@@ -943,7 +947,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.updateUser(giftData.recipientId, {
         accountBalance: (recipient.accountBalance || 0) + readerAmount
       });
-      
+
+      // Broadcast the new gift to livestream viewers
+      const senderUsername = sender.username || `User #${userId}`;
+      const recipientUsername = recipient.username || `User #${giftData.recipientId}`;
+      notifyNewGift(gift, senderUsername, recipientUsername);
+
       res.status(201).json(gift);
     } catch (error) {
       console.error("Failed to create gift:", error);
