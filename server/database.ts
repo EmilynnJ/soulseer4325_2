@@ -5,8 +5,12 @@ import { log } from './vite';
 // Configure neon
 neonConfig.fetchConnectionCache = true;
 
-// Use the connection URL from environment variables or fall back to default for Replit
-const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://neondb_owner:npg_1tA3DvNckXoW@ep-noisy-union-a5mhired-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require';
+// Use the connection URL from environment variables only
+const DATABASE_URL = process.env.DATABASE_URL;
+
+if (!DATABASE_URL) {
+  throw new Error('DATABASE_URL environment variable is not set');
+}
 
 const sql = neon(DATABASE_URL);
 

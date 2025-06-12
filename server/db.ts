@@ -4,9 +4,15 @@ import * as schema from '@shared/schema';
 
 const { Pool } = pg;
 
-// Create a PostgreSQL pool using the Neon PostgreSQL connection string
+// Create a PostgreSQL pool using the connection string from the environment
+const connectionString = process.env.DATABASE_URL;
+
+if (!connectionString) {
+  throw new Error('DATABASE_URL environment variable is not set');
+}
+
 export const pool = new Pool({
-  connectionString: 'postgresql://neondb_owner:npg_Pbpz9TuH5AhX@ep-lively-base-a4k2rid7.us-east-1.aws.neon.tech/neondb?sslmode=require'
+  connectionString
 });
 
 // Initialize Drizzle with the pool and schema
