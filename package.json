@@ -61,6 +61,7 @@
     "embla-carousel-react": "^8.3.0",
     "esbuild": "^0.25.0",
     "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
     "express-session": "^1.18.1",
     "framer-motion": "^11.13.1",
     "idx": "^3.0.3",
@@ -96,8 +97,7 @@
     "wouter": "^3.3.5",
     "ws": "^8.18.0",
     "zod": "^3.23.8",
-    "zod-validation-error": "^3.4.0",
-    "express-rate-limit": "^7.5.0"
+    "zod-validation-error": "^3.4.0"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
