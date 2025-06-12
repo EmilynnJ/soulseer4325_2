@@ -1,6 +1,5 @@
 import authRoutes from './routes/authRoutes';
 import notificationRoutes from './routes/notificationRoutes';
-
 import express, { type Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";

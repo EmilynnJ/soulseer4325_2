@@ -17,7 +17,7 @@ import {
 import { GlowCard } from "@/components/ui/glow-card";
 
 const loginSchema = z.object({
-  username: z.string().min(1, "Username is required"),
+  email: z.string().email("Valid email is required"),
   password: z.string().min(1, "Password is required"),
 });
 
@@ -34,19 +34,14 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      username: "",
+      email: "",
       password: "",
     },
   });
 
   async function onSubmit(data: LoginFormValues) {
-    setIsSubmitting(true);
-    try {
-      await login(data.username, data.password);
-      onSuccess();
-    } finally {
-      setIsSubmitting(false);
-    }
+    await loginMutation.mutateAsync({ email: data.email, password: data.password });
+    onSuccess();
   }
 
   return (
@@ -57,13 +52,13 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
           <FormField
             control={form.control}
-            name="username"
+            name="email"
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="text-light font-playfair">Username or Email</FormLabel>
+                <FormLabel className="text-light font-playfair">Email</FormLabel>
                 <FormControl>
                   <Input
-                    placeholder="Enter your username or email"
+                    placeholder="Enter your email"
                     {...field}
                     className="bg-primary-light/30 border-accent-gold/30 font-playfair text-gray-800"
                   />
