@@ -1,6 +1,6 @@
 import { neon } from '@neondatabase/serverless';
-import { storage } from '../storage';
-import { sendToUser } from './signaling';
+import { broadcastToReading } from './signaling';
+
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -229,7 +229,6 @@ export class BillingService {
 
         sendToUser(Number(sessionId), sessionInfo.client_id, 'notification', { message });
         sendToUser(Number(sessionId), sessionInfo.reader_id, 'notification', { message });
-      }
 
       console.log(`Session ${sessionId} ended due to insufficient funds`);
       
